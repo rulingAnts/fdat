@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>FLEx XML Viewer</title>
+<title>FLExText Discourse Analysis Tool (FDAT)</title>
 <style>
   :root{
     --accent:#0b6edb;
@@ -303,7 +303,7 @@
 <body>
 
 <header>
-  <h1>FLEx XML Viewer</h1>
+  <h1>FLExText Discourse Analysis Tool (FDAT)</h1>
   <div style="margin-left:auto" class="small-muted" hidden>© 2025 Seth Johnston</div>
 </header>
 
@@ -313,25 +313,23 @@
       <span class="chev">▾</span>
     </div>
     <div class="collapsible-body" style="padding:10px 14px">
-  <h2 style="font-size:1rem;margin-top:0">About FLEx XML Viewer</h2>
+  <h2 style="font-size:1rem;margin-top:0">About Discourse Analysis Tool</h2>
   <p>
-    <strong>FLEx XML Viewer</strong> is a client-side web app for viewing and exploring
+    <strong>FLExText Discourse Analysis Tool (FDAT)</strong> is a specialized client-side web app for viewing, transforming, and exporting
     <a href="https://software.sil.org/fieldworks/" target="_blank" rel="noopener noreferrer">FieldWorks (FLEx)</a>
-    XML exports in a structured, readable format. This app is a part of the <a href="https://github.com/rulingAnts/flet" target="_blank" rel="noopener noreferrer">Field Linguistics Extension Tools collection</a>.
+    Discourse Chart XML exports. This app is part of the <a href="https://github.com/rulingAnts/flet" target="_blank" rel="noopener noreferrer">Field Linguistics Extension Tools collection</a>.
   </p>
   <p style="margin-top:6px"><strong>Privacy</strong>: All conversions happen locally in your browser — your XML and language data never leave your device. There are no uploads or analytics. Preferences (like language order or view options) are stored only in your browser’s local storage. Using “Open in new window” or “Save as HTML” creates a local snapshot you can choose to save or share.</p>
-  <p>This viewer supports the following FieldWorks XML export types:</p>
+  <p>This tool is dedicated to <strong>Discourse Charts (Text Charts)</strong> and provides:</p>
   <ul style="margin-top:4px">
-    <li><strong>Lists</strong> — displays hierarchical <code>&lt;list&gt;</code> structures as collapsible nested lists.</li>
-    <li><strong>Translated Lists</strong> — handles multilingual <code>&lt;AUni&gt;</code>-based lists with language ordering and visibility controls.</li>
-    <li><strong>Phonology</strong> — renders natural classes, phoneme inventories, and cross-references in human-readable tables.</li>
-    <li><strong>Wordforms</strong> — displays lexical items and analyses in expandable cards or sortable tables.</li>
-    <li><strong>Generic XML</strong> — provides a recursive tree view for any other well-formed XML data.</li>
+    <li>Display FLEx Text Charts as HTML tables with resizable columns (click and drag column borders in second header row)</li>
+    <li>Preserve formatting and interlinear structure from FLEx exports</li>
+    <li>Add custom prologues, epilogues, and HTML content before/after charts</li>
+    <li>Configure abbreviations, salience bands, free translations, and notes display</li>
+    <li>Control marker display order and visibility</li>
+    <li>Export charts with all formatting and customizations</li>
   </ul>
-  <p style="margin-top:6px">For <strong>Discourse Charts (Text Charts)</strong> with advanced transformation and export features, use the specialized <a href="discourse.html">Discourse Analysis Tool</a>.</p>
-  <p>
-    This app does <em>not</em> process <strong>LIFT</strong> or <strong>FLExText</strong> exports — those should be opened directly in FLEx. XLingPaper XML exports can open with XLingPpaer. And Word XML files should be opened in Microsoft Word.
-  </p>
+  <p style="margin-top:6px">For other FLEx XML export types (Lists, Phonology, Wordforms, etc.), use the <a href="index.html">FLEx XML Viewer</a>.</p>
     </div>
   </section>
 
@@ -355,6 +353,7 @@
 
   <div style="margin-left:auto;display:flex;gap:8px;align-items:left">
     <input id="fileInput" type="file" accept=".xml,.xml.txt" />
+  <button id="exportChartBtn" class="secondary">Export Discourse Chart</button>
     <button id="exportSettingsBtn" class="secondary" title="Export all viewer settings as JSON">Export Settings</button>
     <button id="importSettingsBtn" class="secondary" title="Import viewer settings from JSON">Import Settings</button>
     <input id="settingsImportInput" type="file" accept="application/json,.json" style="display:none" />
@@ -362,8 +361,7 @@
 </div>
 
 <!-- Optional heading and preface (HTML) to insert before a Text Chart -->
-<!-- Discourse-specific panels hidden in general XML viewer - use discourse.html for these features -->
-<div id="prologuePanel" class="prologue-panel" aria-live="polite" data-collapsed="1" style="display:none">
+<div id="prologuePanel" class="prologue-panel" aria-live="polite" data-collapsed="1">
   <div class="collapsible-header" id="prologueHeader">
     <span class="small-muted">Chart header and note (optional)</span>
     <span class="chev">▸</span>
@@ -402,8 +400,8 @@
   </div>
 </div>
 
-<!-- Abbreviations list (labels + optional definitions) - hidden in general viewer -->
-<div id="abbrevPanel" class="abbrev-panel" aria-live="polite" data-collapsed="1" style="display:none">
+<!-- Abbreviations list (labels + optional definitions) -->
+<div id="abbrevPanel" class="abbrev-panel" aria-live="polite" data-collapsed="1">
   <div class="collapsible-header" id="abbrevHeader">
     <span class="small-muted">Abbreviations List (optional)</span>
     <span class="chev">▸</span>
@@ -1885,8 +1883,101 @@ async function renderDocument(xmlDoc){
   const area = byId('renderArea');
   area.innerHTML = '';
 
-  // Detect Text Chart (Discourse chart) and redirect to specialized tool
+  // Detect Text Chart (Discourse chart) and render via XSLT
   if(isTextChartDocument(xmlDoc)){
+    const rendered = await renderTextChart(xmlDoc);
+    area.innerHTML = '';
+    showAppendHtmlPanel(true);
+    // Initialize Append HTML controls once
+    if(!byId('appendHtmlPanel').dataset.wired){ initAppendHtmlControls(); byId('appendHtmlPanel').dataset.wired = '1'; }
+    // Apply any previously selected before-html prior to placing prologue
+    applyAppendedHtmlToRenderArea();
+    // Show prologue controls and inject current prologue before the chart
+    showProloguePanel(true);
+    // Wire collapsibles (collapsed by default; persisted)
+    wireCollapsible('prologuePanel','prologueHeader');
+    applyPrologueToRenderArea(loadProloguePrefs());
+  // Show Postlogue controls (for export)
+  showPostloguePanel(true);
+  if(!byId('postloguePanel').dataset.wired){ initPostlogueControls(); byId('postloguePanel').dataset.wired = '1'; }
+  wireCollapsible('postloguePanel','postlogueHeader');
+  // Notes panel
+  showNotesPanel(true);
+  wireCollapsible('notesPanel','notesHeader');
+  initNotesControls();
+  // Free translations panel
+  showFTPanel(true);
+  wireCollapsible('ftPanel','ftHeader');
+  initFTControls();
+  // Salience bands panel
+  showSaliencePanel(true);
+  wireCollapsible('saliencePanel','salienceHeader');
+  initSalienceControls();
+    // Scan listRef abbreviations and show Abbrev controls
+    globalState.chartAbbrevLabels = collectListRefLabelsFromXml(xmlDoc);
+    showAbbrevPanel(true);
+    wireCollapsible('abbrevPanel','abbrevHeader');
+    buildAbbrevControls(globalState.chartAbbrevLabels);
+    // Prepare ListRef controls (we will collect labels from rendered DOM; compute a suggested order from XML)
+    const suggestedOrder = computeListRefSuggestedOrderFromXml(xmlDoc);
+    showListRefPanel(true);
+    wireCollapsible('listRefPanel','listRefHeader');
+    if(rendered){
+      area.appendChild(rendered);
+      // Assign persistent GUIDs to body rows for stable associations
+      try{
+        const tbl = area.querySelector('table.chartshell');
+        if(tbl){
+          Array.from(tbl.querySelectorAll('tbody tr')).forEach(tr=>{
+            if(tr.classList.contains('title1') || tr.classList.contains('title2') || tr.classList.contains('ft-inline')) return;
+            getOrAssignRowGuid(tr);
+          });
+        }
+      }catch(_){ }
+      // Wire note tooltips after chart content is in the DOM
+      if(window.wireNoteTooltips){ try{ window.wireNoteTooltips(); }catch(e){ console.error('Error wiring note tooltips:', e); } }
+      // Enable column resizing on the text chart table
+      enableTextChartColumnResize(area);
+  // Wire Free Translation add/edit buttons and apply current display mode
+  wireFreeTranslationButtons(area);
+  applyFreeTranslationsToArea(area);
+  // Wire Salience band buttons and apply to rows
+  wireSalienceButtons(area);
+  applySalienceBandsToArea(area);
+  toggleSalienceColumn();
+      // Apply freeze headers if saved and show control
+      const fhc = byId('freezeHeadersContainer'); if(fhc) fhc.style.display = 'flex';
+      initFreezeHeadersControl();
+      const savedFreeze = loadJSON(FREEZE_HEADERS_KEY); setTimeout(()=> setFreezeHeadersEnabled(!!(savedFreeze && savedFreeze.enabled)), 0);
+      // Ensure abbreviations block is positioned correctly relative to chart
+      applyAbbrevToRenderArea(globalState.abbrevPrefs || loadAbbrevPrefs());
+      // Now insert after-chart HTML in final position
+      applyAppendedHtmlToRenderArea();
+  // Insert/refresh salience legend below prologue and above chart
+  renderSalienceLegend();
+      wireCollapsible('appendHtmlPanel','appendHeader');
+      // Insert Epilogue live preview at end
+      applyEpilogueToRenderArea(loadPostloguePrefs());
+      // Collect ListRef labels from rendered DOM (data-listref set by XSL), build controls with suggested order, and apply prefs
+      globalState.listRefLabels = collectListRefLabelsFromRendered(area);
+      buildListRefControls(globalState.listRefLabels, suggestedOrder);
+    }
+    else { area.textContent = 'Failed to render Text Chart.'; }
+    // Show print-headers toggle when a Text Chart is displayed
+  const rhc = byId('repeatHeadersContainer');
+  if(rhc) rhc.style.display = 'flex';
+  // Ensure the checkbox reflects saved preference and style is applied
+  initRepeatHeadersControl();
+  // If thead exists, apply current saved setting right now
+  const saved = loadJSON(PRINT_HEADERS_KEY);
+  const enabled = !!(saved && saved.enabled);
+  setPrintHeadersEnabled(enabled);
+    return;
+  }
+
+  // Only handle Discourse Charts (Text Charts) in this tool
+  // For other XML types, redirect to the general FLEx XML Viewer
+  if(!isTextChartDocument(xmlDoc)){
     showProloguePanel(false);
     showAbbrevPanel(false);
     showAppendHtmlPanel(false);
@@ -1901,13 +1992,13 @@ async function renderDocument(xmlDoc){
     if(fhc2) fhc2.style.display = 'none';
     setPrintHeadersEnabled(false);
     
-    // Display message directing users to the discourse analysis tool
+    // Display message directing users to the general viewer
     const msg = create('div');
     msg.innerHTML = `
       <div style="padding:20px;text-align:center">
-        <h3 style="color:#0b6edb;margin-bottom:12px">Discourse Chart Detected</h3>
-        <p style="margin-bottom:16px">For advanced Discourse Chart features including transformations, custom formatting,<br>and specialized export options, please use the <strong><a href="discourse.html" style="color:var(--accent);text-decoration:underline">Discourse Analysis Tool</a></strong>.</p>
-        <button onclick="window.location.href='discourse.html'" style="background:var(--accent);color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:1rem">Go to Discourse Analysis Tool</button>
+        <h3 style="color:#d32f2f;margin-bottom:12px">This tool only supports Discourse Charts (Text Charts)</h3>
+        <p style="margin-bottom:16px">For Lists, Phonology, Wordforms, and other FLEx XML export types,<br>please use the <strong><a href="index.html" style="color:var(--accent);text-decoration:underline">FLEx XML Viewer</a></strong>.</p>
+        <button onclick="window.location.href='index.html'" style="background:var(--accent);color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:1rem">Go to FLEx XML Viewer</button>
       </div>
     `;
     area.appendChild(msg);
