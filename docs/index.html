@@ -1084,6 +1084,71 @@ function refreshAllSettingsFromContext(){
   }
 }
 
+function syncLegacyToHierarchical(){
+  // Sync changes from legacy storage back to hierarchical storage
+  const settings = loadHierarchicalSettings();
+  const ctx = loadCurrentContext();
+  
+  if(!ctx.languageId) return;
+  
+  const lang = settings.languages[ctx.languageId];
+  if(!lang) return;
+  
+  // Sync language-level settings from legacy storage
+  const abbrevs = loadJSON(ABBREV_PREFS_KEY);
+  if(abbrevs) lang.abbrevs = abbrevs;
+  
+  const listRefs = loadJSON(LISTREF_PREFS_KEY);
+  if(listRefs) lang.listRefs = listRefs;
+  
+  if(ctx.genreId && lang.genres[ctx.genreId]){
+    const genre = lang.genres[ctx.genreId];
+    
+    // Sync genre-level settings
+    const salience = loadJSON(SALIENCE_PREFS_KEY);
+    if(salience) genre.salienceBands = salience;
+    
+    if(ctx.documentId && genre.documents[ctx.documentId]){
+      const doc = genre.documents[ctx.documentId];
+      
+      // Sync document-level settings
+      const prologue = loadJSON(TEXTCHART_PROLOGUE_KEY);
+      if(prologue) doc.prologue = prologue;
+      
+      const postlogue = loadJSON(TEXTCHART_POSTLOGUE_KEY);
+      if(postlogue) doc.postlogue = postlogue;
+      
+      const ft = loadJSON(FT_PREFS_KEY);
+      if(ft) doc.freeTranslations = ft;
+      
+      const notes = loadJSON(NOTES_PREFS_KEY);
+      if(notes) doc.notes = notes;
+      
+      const rowGuids = loadJSON(ROW_GUIDS_KEY);
+      if(rowGuids) doc.rowGuids = rowGuids;
+      
+      const tokenGuids = loadJSON(TOKEN_GUIDS_KEY);
+      if(tokenGuids) doc.tokenGuids = tokenGuids;
+      
+      const noteGuids = loadJSON(NOTE_GUIDS_KEY);
+      if(noteGuids) doc.noteGuids = noteGuids;
+    }
+  }
+  
+  // App-level settings
+  const printHeaders = loadJSON(PRINT_HEADERS_KEY);
+  if(printHeaders && typeof printHeaders.enabled !== 'undefined'){
+    settings.appSettings.printHeaders = printHeaders.enabled;
+  }
+  
+  const freezeHeaders = loadJSON(FREEZE_HEADERS_KEY);
+  if(freezeHeaders && typeof freezeHeaders.enabled !== 'undefined'){
+    settings.appSettings.freezeHeaders = freezeHeaders.enabled;
+  }
+  
+  saveHierarchicalSettings(settings);
+}
+
 function migrateToHierarchical(){
   // Check if already migrated
   const existing = loadJSON(HIERARCHICAL_SETTINGS_KEY);
@@ -1238,6 +1303,9 @@ function suggestExportFilename(){
 
 // Export / Import Settings (localStorage backup)
 function collectAllSettings(){
+  // First sync legacy to hierarchical
+  syncLegacyToHierarchical();
+  
   const keys = [
     LANG_PREFS_KEY,
     WORDFORM_PREFS_KEY,
@@ -1253,7 +1321,9 @@ function collectAllSettings(){
     ROW_GUIDS_KEY,
     TOKEN_GUIDS_KEY,
     NOTE_GUIDS_KEY,
-    COLLAPSE_STATE_KEY
+    COLLAPSE_STATE_KEY,
+    HIERARCHICAL_SETTINGS_KEY,
+    CURRENT_CONTEXT_KEY
   ];
   const out = {};
   keys.forEach(k=>{ try{ const v = localStorage.getItem(k); if(v !== null) out[k] = JSON.parse(v); } catch(_){ /* ignore parse errors */ } });
@@ -4880,6 +4950,12 @@ if(document.readyState === 'loading'){
 } else {
   initHierarchicalSettingsUI();
 }
+
+// Sync legacy storage to hierarchical before page unload
+window.addEventListener('beforeunload', syncLegacyToHierarchical);
+
+// Also sync periodically (every 5 seconds) to catch settings changes
+setInterval(syncLegacyToHierarchical, 5000);
 </script>
 </body>
 </html>
