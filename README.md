@@ -36,7 +36,7 @@ For Lists, Phonology, Wordforms, or generic FLEx XML, use the companion viewer: 
 
 All processing is local in your browser; your files are not uploaded.
 
-## Download for Windows
+## Download for Windows, Mac, or Linux
 
 1. Go to the latest release: [https://github.com/rulingAnts/fdat/releases/latest](https://github.com/rulingAnts/fdat/releases/latest)
 2. Download the installer (Setup) (.exe). You may also see a “portable” .exe.
