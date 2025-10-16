@@ -148,8 +148,12 @@
   #postloguePanel[data-collapsed="1"] .collapsible-body,
   #notesPanel[data-collapsed="1"] .collapsible-body,
   #saliencePanel[data-collapsed="1"] .collapsible-body,
+  #salienceDisplayPanel[data-collapsed="1"] .collapsible-body,
   #ftPanel[data-collapsed="1"] .collapsible-body,
-  #aboutPanel[data-collapsed="1"] .collapsible-body{display:none}
+  #aboutPanel[data-collapsed="1"] .collapsible-body,
+  #languageProjectsSection[data-collapsed="1"] .collapsible-body,
+  #textGenresSection[data-collapsed="1"] .collapsible-body,
+  #documentPartsSection[data-collapsed="1"] .collapsible-body{display:none}
   /* Grouping UI */
   .lr-group{border:1px solid #dcefdc;background:#f8fff8;border-radius:6px;padding:8px;margin-bottom:8px}
   .lr-group-header{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px}
@@ -360,10 +364,136 @@
   </div>
 </div>
 
+<!-- ===== Language Projects Section ===== -->
+<div id="languageProjectsSection" class="prologue-panel" aria-live="polite" data-collapsed="1" style="display:none;background:#f0f8ff;border:1px solid #b3d9ff">
+  <div class="collapsible-header" id="languageProjectsHeader">
+    <span class="small-muted">Language Projects</span>
+    <span class="chev">▸</span>
+  </div>
+  <div class="collapsible-body">
+    <div class="small-muted" style="margin-bottom:10px">Settings for the language you are studying. These settings apply across multiple texts in the same language project.</div>
+
+<!-- Abbreviations list (labels + optional definitions) -->
+<div id="abbrevPanel" class="abbrev-panel" aria-live="polite" data-collapsed="1" style="margin-left:12px">
+  <div class="collapsible-header" id="abbrevHeader">
+    <span class="small-muted">Abbreviations List</span>
+    <span class="chev">▸</span>
+  </div>
+  <div class="collapsible-body">
+  <div class="abbrev-grid">
+    <label for="abbrevInclude">Include list</label>
+    <label style="display:flex;align-items:center;gap:8px">
+      <input id="abbrevInclude" type="checkbox" checked> Include abbreviations in output
+    </label>
+
+    <label for="abbrevPosition">Position</label>
+    <div style="display:flex;gap:8px;align-items:center">
+      <select id="abbrevPosition">
+        <option value="top">Top (below title/preface)</option>
+        <option value="bottom">Bottom (after chart)</option>
+      </select>
+      <button id="abbrevResetFromChart" class="small-btn secondary" title="Re-scan listRef items from chart">Reset from chart</button>
+    </div>
+
+    <div class="rows">
+  <div class="small-muted" style="margin:6px 0">Each abbreviation is fixed from the chart. Edit a Name and optional Description:</div>
+      <div id="abbrevRows"></div>
+      <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
+        <button id="abbrevAddManual" class="small-btn" title="Add a custom abbreviation">Add abbreviation</button>
+        <span class="small-muted">Manual abbreviations are saved and exported with the chart.</span>
+      </div>
+      <div id="abbrevEmptyMsg" class="small-muted" style="display:none">No listRef items found in this chart.</div>
+    </div>
+  </div>
+  </div>
+</div>
+
+  <!-- ListRef Styling/Ordering -->
+<div id="listRefPanel" class="listref-panel" aria-live="polite" data-collapsed="1" style="margin-left:12px">
+  <div class="collapsible-header" id="listRefHeader">
+    <span class="small-muted">Text Chart Marker Display and Order Settings</span>
+    <span class="chev">▸</span>
+  </div>
+  <div class="collapsible-body">
+  <div class="listref-grid">
+    <div class="rows">
+      <div class="small-muted" style="margin:6px 0; display:flex; align-items:center; gap:12px; justify-content:space-between; flex-wrap:wrap">
+        <span>Control how specific TextChart Markers render in cells. Order here sets left-to-right order within the same cell. Styling and visibility only affect in-cell TextChart Markers; the Abbreviations list remains alphabetical.</span>
+        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap">
+          <label title="Choose how to order tokens in cells">
+            <select id="listRefEnforceMode">
+              <option value="none" selected>No ordering (source order)</option>
+              <option value="groups">Enforce within groups</option>
+              <option value="global">Enforce globally</option>
+            </select>
+          </label>
+          <button id="listRefToggleOrder" class="small-btn secondary" title="Toggle ordering direction">(top → bottom)</button>
+          <button id="listRefShowAll" class="small-btn" title="Show all abbreviations">Show all</button>
+          <button id="listRefHideAll" class="small-btn secondary" title="Hide all abbreviations">Hide all</button>
+          <button id="listRefResetAllStyles" class="small-btn secondary" title="Clear styles for all groups and items (keep visibility/order)">Reset all styles</button>
+          <button id="listRefResetOrder" class="small-btn secondary" title="Reset order to most prevalent pattern from this chart">Reset order</button>
+        </div>
+      </div>
+      <div id="listRefGroups"></div>
+      <div id="listRefRows"></div>
+      <div id="listRefWarnings" class="small-muted" style="margin-top:8px; display:none"></div>
+      <div style="margin-top:8px">
+        <div class="small-muted" style="font-weight:600;margin-bottom:6px">Groups</div>
+        <div id="listRefGroupList"></div>
+        <div style="margin-top:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <button id="listRefAddGroup" class="small-btn" title="Add a new group">Add group</button>
+          <span class="small-muted">Items can be assigned to a group using the "Group:" dropdown. Grouped items share ordering, visibility, and style within their group.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  </div>
+</div>
+
+  </div>
+</div>
+
+<!-- ===== Text Genres Section ===== -->
+<div id="textGenresSection" class="prologue-panel" aria-live="polite" data-collapsed="1" style="display:none;background:#fff8f0;border:1px solid #ffd9b3">
+  <div class="collapsible-header" id="textGenresHeader">
+    <span class="small-muted">Text Genres</span>
+    <span class="chev">▸</span>
+  </div>
+  <div class="collapsible-body">
+    <div class="small-muted" style="margin-bottom:10px">Settings for text genres. These settings can be reused across different texts of the same genre.</div>
+
+  <!-- Salience Bands (row color coding) - definitions only -->
+  <div id="saliencePanel" class="prologue-panel" aria-live="polite" data-collapsed="1" style="margin-left:12px">
+    <div class="collapsible-header" id="salienceHeader">
+      <span class="small-muted">Salience Bands (row color coding)</span>
+      <span class="chev">▸</span>
+    </div>
+    <div class="collapsible-body">
+      <div class="small-muted" style="margin-bottom:8px">Create a nested outline of bands. Each band has an automatic number (e.g., 1, 1.1, 1.1.2), a label, and a color. Assign a band to rows from the chart using the "Salience band…" button next to the row number.</div>
+      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:8px">
+        <button id="salAddRoot" class="small-btn">Add band</button>
+        <button id="salClearAssignments" class="small-btn secondary" title="Clear band assignments for all rows">Clear all row assignments</button>
+      </div>
+      <div id="salienceList"></div>
+    </div>
+  </div>
+
+  </div>
+</div>
+
+<!-- ===== Document Parts and Settings Section ===== -->
+<div id="documentPartsSection" class="prologue-panel" aria-live="polite" data-collapsed="1" style="display:none;background:#f0fff0;border:1px solid#b3ffb3">
+  <div class="collapsible-header" id="documentPartsHeader">
+    <span class="small-muted">Document Parts and Settings</span>
+    <span class="chev">▸</span>
+  </div>
+  <div class="collapsible-body">
+    <div class="small-muted" style="margin-bottom:10px">Settings specific to the current chart document.</div>
+
 <!-- Optional heading and preface (HTML) to insert before a Text Chart -->
-<div id="prologuePanel" class="prologue-panel" aria-live="polite" data-collapsed="1">
+<div id="prologuePanel" class="prologue-panel" aria-live="polite" data-collapsed="1" style="margin-left:12px">
   <div class="collapsible-header" id="prologueHeader">
-    <span class="small-muted">Chart header and note (optional)</span>
+    <span class="small-muted">Chart header and note</span>
     <span class="chev">▸</span>
   </div>
   <div class="collapsible-body">
@@ -400,49 +530,16 @@
   </div>
 </div>
 
-<!-- Abbreviations list (labels + optional definitions) -->
-<div id="abbrevPanel" class="abbrev-panel" aria-live="polite" data-collapsed="1">
-  <div class="collapsible-header" id="abbrevHeader">
-    <span class="small-muted">Abbreviations List (optional)</span>
-    <span class="chev">▸</span>
-  </div>
-  <div class="collapsible-body">
-  <div class="abbrev-grid">
-    <label for="abbrevInclude">Include list</label>
-    <label style="display:flex;align-items:center;gap:8px">
-      <input id="abbrevInclude" type="checkbox" checked> Include abbreviations in output
-    </label>
 
-    <label for="abbrevPosition">Position</label>
-    <div style="display:flex;gap:8px;align-items:center">
-      <select id="abbrevPosition">
-        <option value="top">Top (below title/preface)</option>
-        <option value="bottom">Bottom (after chart)</option>
-      </select>
-      <button id="abbrevResetFromChart" class="small-btn secondary" title="Re-scan listRef items from chart">Reset from chart</button>
-    </div>
-
-    <div class="rows">
-  <div class="small-muted" style="margin:6px 0">Each abbreviation is fixed from the chart. Edit a Name and optional Description:</div>
-      <div id="abbrevRows"></div>
-      <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
-        <button id="abbrevAddManual" class="small-btn" title="Add a custom abbreviation">Add abbreviation</button>
-        <span class="small-muted">Manual abbreviations are saved and exported with the chart.</span>
-      </div>
-      <div id="abbrevEmptyMsg" class="small-muted" style="display:none">No listRef items found in this chart.</div>
-    </div>
-  </div>
-  </div>
-</div>
-
-<!-- Additional HTML (before Prologue and after Text Chart) -->
-<div id="appendHtmlPanel" class="prologue-panel" aria-live="polite" style="display:none" data-collapsed="1">
+<!-- Additional HTML Document -->
+<div id="appendHtmlPanel" class="prologue-panel" aria-live="polite" data-collapsed="1" style="margin-left:12px">
   <div class="collapsible-header" id="appendHeader">
-    <span class="small-muted">Additional HTML Document (optional) - <i>i.e. include your interlinear text with free translations (or include some other description or write-up to bundle with your chart).</i></span>
+    <span class="small-muted">Additional HTML Document</span>
     <span class="chev">▸</span>
   </div>
   <div class="collapsible-body">
   <div class="prologue-grid">
+    <div class="small-muted full" style="margin-bottom:8px"><i>i.e. include your interlinear text with free translations (or include some other description or write-up to bundle with your chart).</i></div>
     <label for="beforeHtmlInput">Before Prologue</label>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <input id="beforeHtmlInput" type="file" accept=".html,.htm,text/html" />
@@ -456,38 +553,15 @@
       <span id="afterHtmlStatus" class="small-muted"></span>
     </div>
     <div class="full small-muted" style="margin-top:6px">
-      Tip: The “After Text Chart” HTML will appear before Abbreviations when Abbreviations are placed at the end.
+      Tip: The "After Text Chart" HTML will appear before Abbreviations when Abbreviations are placed at the end.
     </div>
   </div>
   <div class="small-muted" style="margin-top:6px">Print: Page breaks are inserted after the Before-Prologue HTML and before the After-Chart HTML.</div>
   </div>
   </div>
 
-  <!-- Salience Bands (row color coding) -->
-  <div id="saliencePanel" class="prologue-panel" aria-live="polite" style="display:none" data-collapsed="1">
-    <div class="collapsible-header" id="salienceHeader">
-      <span class="small-muted">Salience Bands (row color coding)</span>
-      <span class="chev">▸</span>
-    </div>
-    <div class="collapsible-body">
-      <div class="small-muted" style="margin-bottom:8px">Create a nested outline of bands. Each band has an automatic number (e.g., 1, 1.1, 1.1.2), a label, and a color. Assign a band to rows from the chart using the “Salience band…” button next to the row number.</div>
-      <div class="controls-inline" style="margin:6px 0 10px 0">
-        <label class="small-muted" style="display:flex; align-items:center; gap:8px"><input id="salienceEnabled" type="checkbox" checked> Show salience band colors</label>
-        <label class="small-muted" style="display:flex; align-items:center; gap:8px"><input id="salienceShowLegend" type="checkbox" checked> Show legend</label>
-        <label class="small-muted" style="display:flex; align-items:center; gap:8px"><input id="salienceShowColumn" type="checkbox"> Show salience column</label>
-        <label class="small-muted" style="display:flex; align-items:center; gap:8px"><input id="salienceCellOnly" type="checkbox"> Limit color to salience cell only</label>
-        <label class="small-muted" title="0 = transparent, 1 = full color" style="display:flex; align-items:center; gap:8px">Opacity <input id="salienceOpacity" type="range" min="0" max="1" step="0.05" value="1" style="width:160px"></label>
-      </div>
-      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:8px">
-        <button id="salAddRoot" class="small-btn">Add band</button>
-        <button id="salClearAssignments" class="small-btn secondary" title="Clear band assignments for all rows">Clear all row assignments</button>
-      </div>
-      <div id="salienceList"></div>
-    </div>
-  </div>
-
   <!-- Notes column options -->
-  <div id="notesPanel" class="prologue-panel" aria-live="polite" style="display:none" data-collapsed="1">
+  <div id="notesPanel" class="prologue-panel" aria-live="polite" data-collapsed="1" style="margin-left:12px">
     <div class="collapsible-header" id="notesHeader">
       <span class="small-muted">Notes column options</span>
       <span class="chev">▸</span>
@@ -517,7 +591,7 @@
   </div>
 
   <!-- Free translations options -->
-  <div id="ftPanel" class="prologue-panel" aria-live="polite" style="display:none" data-collapsed="1">
+  <div id="ftPanel" class="prologue-panel" aria-live="polite" data-collapsed="1" style="margin-left:12px">
     <div class="collapsible-header" id="ftHeader">
       <span class="small-muted">Free translations</span>
       <span class="chev">▸</span>
@@ -530,7 +604,7 @@
             <option value="tooltip">Tooltip + links (exported)</option>
             <option value="inline">Inline under each row</option>
           </select>
-          <div class="small-muted" style="margin-top:6px">Add/edit with the “Add Trans…” button next to row numbers in the preview. Buttons are not included in Export.</div>
+          <div class="small-muted" style="margin-top:6px">Add/edit with the "Add Trans…" button next to row numbers in the preview. Buttons are not included in Export.</div>
         </div>
         <label>Inline style (when mode = Inline)</label>
         <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap">
@@ -546,10 +620,10 @@
     </div>
   </div>
 
-  <!-- Epilogue (HTML/Text after everything in export) -->
-  <div id="postloguePanel" class="prologue-panel" aria-live="polite" style="display:none" data-collapsed="1">
+  <!-- Epilogue -->
+  <div id="postloguePanel" class="prologue-panel" aria-live="polite" data-collapsed="1" style="margin-left:12px">
     <div class="collapsible-header" id="postlogueHeader">
-      <span class="small-muted">Epilogue (optional) — text or HTML to append at the very end</span>
+      <span class="small-muted">Epilogue</span>
       <span class="chev">▸</span>
     </div>
     <div class="collapsible-body">
@@ -563,47 +637,26 @@
         </div>
       </div>
     </div>
-    </div>
+  </div>
 
-  <!-- ListRef Styling/Ordering -->
-<div id="listRefPanel" class="listref-panel" aria-live="polite" style="display:none" data-collapsed="1">
-  <div class="collapsible-header" id="listRefHeader">
-    <span class="small-muted">Text Chart Marker Display and Order Settings</span>
-    <span class="chev">▸</span>
-  </div>
-  <div class="collapsible-body">
-  <div class="listref-grid">
-    <div class="rows">
-      <div class="small-muted" style="margin:6px 0; display:flex; align-items:center; gap:12px; justify-content:space-between; flex-wrap:wrap">
-        <span>Control how specific TextChart Markers render in cells. Order here sets left-to-right order within the same cell. Styling and visibility only affect in-cell TextChart Markers; the Abbreviations list remains alphabetical.</span>
-        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap">
-          <label title="Choose how to order tokens in cells">
-            <select id="listRefEnforceMode">
-              <option value="none" selected>No ordering (source order)</option>
-              <option value="groups">Enforce within groups</option>
-              <option value="global">Enforce globally</option>
-            </select>
-          </label>
-          <button id="listRefToggleOrder" class="small-btn secondary" title="Toggle ordering direction">(top → bottom)</button>
-          <button id="listRefShowAll" class="small-btn" title="Show all abbreviations">Show all</button>
-          <button id="listRefHideAll" class="small-btn secondary" title="Hide all abbreviations">Hide all</button>
-          <button id="listRefResetAllStyles" class="small-btn secondary" title="Clear styles for all groups and items (keep visibility/order)">Reset all styles</button>
-          <button id="listRefResetOrder" class="small-btn secondary" title="Reset order to most prevalent pattern from this chart">Reset order</button>
-        </div>
-      </div>
-      <div id="listRefGroups"></div>
-      <div id="listRefRows"></div>
-      <div id="listRefWarnings" class="small-muted" style="margin-top:8px; display:none"></div>
-      <div style="margin-top:8px">
-        <div class="small-muted" style="font-weight:600;margin-bottom:6px">Groups</div>
-        <div id="listRefGroupList"></div>
-        <div style="margin-top:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <input id="listRefNewGroupName" type="text" placeholder="New group name" style="padding:6px;border:1px solid #e5e5e5;border-radius:6px">
-          <button id="listRefAddGroup" class="small-btn">Add group</button>
-        </div>
+  <!-- Salience Display Settings -->
+  <div id="salienceDisplayPanel" class="prologue-panel" aria-live="polite" data-collapsed="1" style="margin-left:12px">
+    <div class="collapsible-header" id="salienceDisplayHeader">
+      <span class="small-muted">Salience Display Settings</span>
+      <span class="chev">▸</span>
+    </div>
+    <div class="collapsible-body">
+      <div class="small-muted" style="margin-bottom:8px">Control how salience bands are displayed in the current chart.</div>
+      <div class="controls-inline" style="margin:6px 0 10px 0">
+        <label class="small-muted" style="display:flex; align-items:center; gap:8px"><input id="salienceEnabled" type="checkbox" checked> Show salience band colors</label>
+        <label class="small-muted" style="display:flex; align-items:center; gap:8px"><input id="salienceShowLegend" type="checkbox" checked> Show legend</label>
+        <label class="small-muted" style="display:flex; align-items:center; gap:8px"><input id="salienceShowColumn" type="checkbox"> Show salience column</label>
+        <label class="small-muted" style="display:flex; align-items:center; gap:8px"><input id="salienceCellOnly" type="checkbox"> Limit color to salience cell only</label>
+        <label class="small-muted" title="0 = transparent, 1 = full color" style="display:flex; align-items:center; gap:8px">Opacity <input id="salienceOpacity" type="range" min="0" max="1" step="0.05" value="1" style="width:160px"></label>
       </div>
     </div>
   </div>
+
   </div>
 </div>
 
@@ -855,6 +908,7 @@ function collectAllSettings(){
     LISTREF_PREFS_KEY,
     FT_PREFS_KEY,
     SALIENCE_PREFS_KEY,
+    NOTES_PREFS_KEY,
     ROW_GUIDS_KEY,
     TOKEN_GUIDS_KEY,
     NOTE_GUIDS_KEY,
@@ -1077,6 +1131,11 @@ function showProloguePanel(show){ byId('prologuePanel').style.display = show ? '
 
 // Wire About panel collapsible on load
 wireCollapsible('aboutPanel','aboutHeader');
+
+// Wire new section collapsible headers
+wireCollapsible('languageProjectsSection','languageProjectsHeader');
+wireCollapsible('textGenresSection','textGenresHeader');
+wireCollapsible('documentPartsSection','documentPartsHeader');
 
 /* ===== Postlogue controls (stored and used only for export) ===== */
 function loadPostloguePrefs(){
@@ -1887,6 +1946,12 @@ async function renderDocument(xmlDoc){
   if(isTextChartDocument(xmlDoc)){
     const rendered = await renderTextChart(xmlDoc);
     area.innerHTML = '';
+    
+    // Show all Text Chart sections
+    showLanguageProjectsSection(true);
+    showTextGenresSection(true);
+    showDocumentPartsSection(true);
+    
     showAppendHtmlPanel(true);
     // Initialize Append HTML controls once
     if(!byId('appendHtmlPanel').dataset.wired){ initAppendHtmlControls(); byId('appendHtmlPanel').dataset.wired = '1'; }
@@ -1913,6 +1978,8 @@ async function renderDocument(xmlDoc){
   showSaliencePanel(true);
   wireCollapsible('saliencePanel','salienceHeader');
   initSalienceControls();
+  // Salience display settings panel
+  wireCollapsible('salienceDisplayPanel','salienceDisplayHeader');
     // Scan listRef abbreviations and show Abbrev controls
     globalState.chartAbbrevLabels = collectListRefLabelsFromXml(xmlDoc);
     showAbbrevPanel(true);
@@ -1978,14 +2045,10 @@ async function renderDocument(xmlDoc){
   // Only handle Discourse Charts (Text Charts) in this tool
   // For other XML types, redirect to the general FLEx XML Viewer
   if(!isTextChartDocument(xmlDoc)){
-    showProloguePanel(false);
-    showAbbrevPanel(false);
-    showAppendHtmlPanel(false);
-    showSaliencePanel(false);
-    showFTPanel(false);
-    showNotesPanel(false);
-    showPostloguePanel(false);
-    showListRefPanel(false);
+    // Hide all Text Chart sections
+    showLanguageProjectsSection(false);
+    showTextGenresSection(false);
+    showDocumentPartsSection(false);
     const rhc = byId('repeatHeadersContainer');
     if(rhc) rhc.style.display = 'none';
     const fhc2 = byId('freezeHeadersContainer');
@@ -3726,6 +3789,12 @@ function initNotesControls(){
 
 /* ===== Salience Bands (row color coding) ===== */
 function showSaliencePanel(show){ const p = byId('saliencePanel'); if(p) p.style.display = show ? 'block' : 'none'; }
+
+// Section visibility functions
+function showLanguageProjectsSection(show){ const p = byId('languageProjectsSection'); if(p) p.style.display = show ? 'block' : 'none'; }
+function showTextGenresSection(show){ const p = byId('textGenresSection'); if(p) p.style.display = show ? 'block' : 'none'; }
+function showDocumentPartsSection(show){ const p = byId('documentPartsSection'); if(p) p.style.display = show ? 'block' : 'none'; }
+
 function loadSaliencePrefs(){
   const d = loadJSON(SALIENCE_PREFS_KEY) || {};
   return {
