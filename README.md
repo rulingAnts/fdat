@@ -1,11 +1,6 @@
-# FLEx XML Tools
+# Flex DiscourseChart Analysis Tool (FDAT)
 
-Client‑side tools for exploring FieldWorks (FLEx) XML exports in a clean, readable format. Runs entirely in the browser (no server) and also ships as a Windows desktop app via Electron.
-
-This project provides two specialized tools:
-
-1. **FLEx XML Viewer** (`index.html`) - General-purpose viewer for Lists, Phonology, Wordforms, and Generic XML
-2. **Discourse Analysis Tool** (`discourse.html`) - Specialized tool for viewing, transforming, and exporting Discourse Charts (Text Charts)
+FDAT is a specialized, client‑side tool for viewing, transforming, styling, and exporting FLEx Text Charts (Discourse Charts). It runs entirely in your browser (no server) and also ships as a desktop app via Electron.
 
 ### Privacy at a glance
 
@@ -15,24 +10,12 @@ This project provides two specialized tools:
   
 This project is part of the Field Linguistics Extension Tools (FLET) project: [https://github.com/rulingAnts/flet](https://github.com/rulingAnts/flet)
 
-- Web app: [https://rulingants.github.io/flexml_display](https://rulingants.github.io/flexml_display)
-- Latest Windows release: [https://github.com/rulingAnts/flexml_display/releases/latest](https://github.com/rulingAnts/flexml_display/releases/latest)
+- Web app: [https://rulingants.github.io/fdat](https://rulingants.github.io/fdat)
+- Latest Windows release: [https://github.com/rulingAnts/fdat/releases/latest](https://github.com/rulingAnts/fdat/releases/latest)
 
-## What they do
+## What it does
 
-### FLEx XML Viewer
-
-The general-purpose XML viewer handles:
-
-- Lists — hierarchical `<list>` structures as collapsible trees
-- Translated Lists — multilingual AUni-based lists with language ordering/visibility controls
-- Phonology — natural classes, phoneme inventories, cross-references, and codes
-- Wordforms — lexical items and analyses, with Card and Table views and filtering
-- Generic XML — fallback recursive tree for any well‑formed XML
-
-### Discourse Analysis Tool (FDAT)
-
-The Discourse Analysis Tool is dedicated to Text Charts and provides:
+FDAT is dedicated to Discourse/Text Charts and provides:
 
 - Display FLEx Text Charts (Discourse Charts) as HTML tables with resizable columns
 - Preserve formatting and interlinear structure from FLEx exports
@@ -41,40 +24,27 @@ The Discourse Analysis Tool is dedicated to Text Charts and provides:
 - Control marker display order and visibility
 - Export charts with all formatting and customizations
 
-Not in scope for either tool: LIFT, FLExText (open those in FLEx), XLingPaper (open in XLingPaper), Word XML (open in Word).
+For Lists, Phonology, Wordforms, or generic FLEx XML, use the companion viewer: https://rulingants.github.io/flexml_display (repo: https://github.com/rulingAnts/flexml_display).
 
 ## Try it online (no install)
 
-### FLEx XML Viewer
-1. Open the web app: [https://rulingants.github.io/flexml_display](https://rulingants.github.io/flexml_display)
-2. Paste XML into the textbox or choose a .xml file.
+1. Open the web app: [https://rulingants.github.io/fdat](https://rulingants.github.io/fdat)
+2. Paste a Discourse Chart XML or choose a .xml file.
 3. Click Preview.
-4. Optional: Toggle "Show element names", Save as HTML
-
-### Discourse Analysis Tool
-1. Open the tool: [https://rulingants.github.io/flexml_display/discourse.html](https://rulingants.github.io/flexml_display/discourse.html)
-2. Paste Discourse Chart XML or choose a .xml file.
-3. Click Preview.
-4. Configure chart options (prologue, abbreviations, salience bands, etc.)
-5. Export using "Export Discourse Chart" button
+4. Configure chart options (prologue, abbreviations, salience bands, notes, etc.)
+5. Export using "Export Discourse Chart" (opens a printable/exportable window)
 
 All processing is local in your browser; your files are not uploaded.
 
 ## Download for Windows
 
-1. Go to the latest release: [https://github.com/rulingAnts/flexml_display/releases/latest](https://github.com/rulingAnts/flexml_display/releases/latest)
+1. Go to the latest release: [https://github.com/rulingAnts/fdat/releases/latest](https://github.com/rulingAnts/fdat/releases/latest)
 2. Download the installer (Setup) (.exe). You may also see a “portable” .exe.
 3. Run the installer. If Windows SmartScreen warns (unsigned binary), choose “More info” → “Run anyway.”
 
 The desktop app bundles the same viewer for offline use.
 
 ## Usage tips
-
-### FLEx XML Viewer
-- Lists and Translated Lists: click triangles to expand/collapse; reorder and show/hide languages.
-- Phonology: click a phoneme "pill" to highlight it; click a table row to highlight related natural classes.
-- Wordforms: use the Filter box; switch Card/Table view; choose which gloss languages appear in Table view.
-- "Save as HTML" saves a static snapshot.
 
 ### Discourse Analysis Tool
 - Resize columns: click and drag column borders in the second header row
@@ -97,49 +67,26 @@ Note: "Save as HTML" embeds the current page's styles from the <head> (including
 ## Developer setup
 
 Requirements
-- Windows 10/11 x64
-- Node.js (use nvm-windows to match project version)
+- Node.js 18–24
+- macOS/Windows/Linux
 
-Install and run (VS Code PowerShell)
-```powershell
-# Use the project’s Node version
-nvm use 22.20.0
-
-# Install dependencies (use npm.cmd if PowerShell blocks npm.ps1)
-npm.cmd ci
-
-# Start Electron
-npm.cmd start
+Install and run
+```bash
+npm install
+npm start
 ```
 
-Build Windows installer locally
-```powershell
-# Optional: avoid symlink errors by enabling Developer Mode or using an elevated shell
-# Win+R → ms-settings:developers → Developer Mode ON
-# or run VS Code/PowerShell "As Administrator"
+Build installers
+```bash
+# Windows (NSIS + Portable)
+npm run dist:win
 
-# Build
-npm.cmd run dist:win
-# Artifacts appear in dist\ (NSIS installer .exe, blockmap, .yml)
+# macOS (DMG)
+npm run dist:mac
+
+# All platforms (where supported)
+npm run dist:all
 ```
-
-Troubleshooting (Windows PowerShell)
-- “npm.ps1 is not digitally signed” → use npm.cmd:
-  ```powershell
-  npm.cmd install
-  npm.cmd run dist:win
-  ```
-  Or set once:
-  ```powershell
-  Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned -Force
-  ```
-- Symlink privilege error during electron-builder cache extraction:
-  - Turn on Windows Developer Mode, or
-  - Run an elevated PowerShell for the build, then:
-    ```powershell
-    Remove-Item "$env:LOCALAPPDATA\electron-builder\Cache\winCodeSign" -Recurse -Force -EA SilentlyContinue
-    npm.cmd run dist:win
-    ```
 
 ## Continuous delivery (optional)
 
@@ -155,7 +102,7 @@ Troubleshooting (Windows PowerShell)
 ## Contributing
 
 Issues and pull requests are welcome:
-- Report bugs or request features: https://github.com/rulingAnts/flexml_display/issues
+- Report bugs or request features: https://github.com/rulingAnts/fdat/issues
 - Please avoid attaching real project data; share minimal sample XMLs that reproduce problems.
 
 ## Roadmap ideas

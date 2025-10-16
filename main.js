@@ -79,8 +79,8 @@ try{
 
   function checkPortableUpdate(){
     // Query GitHub Releases latest (non-prerelease)
-    const owner = 'rulingAnts';
-    const repo = 'flexml_display';
+  const owner = 'rulingAnts';
+  const repo = 'fdat';
     const url = `https://api.github.com/repos/${owner}/${repo}/releases/latest`;
     const options = { headers: { 'User-Agent': 'flexxml-viewer', 'Accept': 'application/vnd.github+json' } };
     try{

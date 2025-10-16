@@ -1,10 +1,10 @@
 {
-  "name": "flexml_display",
-  "version": "2.1.0",
-  "description": "FLEx XML Tools: General XML Viewer and Discourse Analysis Tool for FieldWorks exports.",
+  "name": "fdat",
+  "version": "3.0.0",
+  "description": "Discourse Analysis Tool for FieldWorks exports.",
   "repository": {
     "type": "git",
-    "url": "https://github.com/rulingAnts/flexml_display.git"
+    "url": "https://github.com/rulingAnts/fdat.git"
   },
   "main": "main.js",
   "scripts": {
@@ -15,9 +15,8 @@
     "dist:win": "electron-builder --win nsis",
     "dist:win:portable": "electron-builder --win portable",
     "dist:win:all": "electron-builder --win nsis portable",
-    "icons": "node scripts/gen-icons.mjs",
-    "dist:mac": "npm run icons && electron-builder --mac dmg",
-    "dist:all": "npm run icons && electron-builder -mwl"
+    "dist:mac": "electron-builder --mac dmg",
+    "dist:all": "electron-builder -mwl"
   },
   "author": "",
   "engines": {
@@ -26,14 +25,11 @@
   "license": "AGPL-3.0-only",
   "devDependencies": {
     "electron": "^38.2.2",
-    "electron-builder": "^24.13.3",
-    "png-to-ico": "^3.0.1",
-    "sharp": "^0.34.4",
-    "to-ico": "^1.0.1"
+    "electron-builder": "^24.13.3"
   },
   "build": {
-    "appId": "com.rulingants.flexmlviewer",
-    "productName": "FLEx XML Tools",
+    "appId": "com.rulingants.fdat",
+    "productName": "Flex DiscourseChart Analysis Tool (FDAT)",
     "files": [
       "docs/**/*",
       "main.js",
@@ -74,7 +70,7 @@
       {
         "provider": "github",
         "owner": "rulingAnts",
-        "repo": "flexml_display"
+        "repo": "fdat"
       }
     ]
   },
