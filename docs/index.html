@@ -761,6 +761,7 @@ const ROW_GUIDS_KEY = 'flex_textchart_row_guids_v1';
 const TOKEN_GUIDS_KEY = 'flex_textchart_token_guids_v1';
 const NOTE_GUIDS_KEY = 'flex_textchart_note_guids_v1';
 const NOTES_PREFS_KEY = 'flex_textchart_notes_prefs_v1';
+const COLLAPSE_STATE_KEY = 'flex_textchart_collapse_state_v1';
 
 // Hierarchical settings keys
 const HIERARCHICAL_SETTINGS_KEY = 'fdat_hierarchical_settings_v1';
@@ -1456,7 +1457,6 @@ function initFreezeHeadersControl(){
 }
 
 /* ===== Collapsible panels (Text Chart settings) ===== */
-const COLLAPSE_STATE_KEY = 'flex_textchart_collapse_state_v1';
 function loadCollapseState(){ return loadJSON(COLLAPSE_STATE_KEY) || {}; }
 function saveCollapseState(s){ saveJSON(COLLAPSE_STATE_KEY, s); }
 function wireCollapsible(panelId, headerId){
