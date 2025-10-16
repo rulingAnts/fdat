@@ -373,6 +373,28 @@
   <div class="collapsible-body">
     <div class="small-muted" style="margin-bottom:10px">Settings for the language you are studying. These settings apply across multiple texts in the same language project.</div>
 
+    <!-- Language Selector and Manager -->
+    <div style="margin-bottom:16px;padding:10px;background:#fff;border:1px solid #d9ebff;border-radius:6px">
+      <div style="display:grid;grid-template-columns:140px 1fr;gap:8px 10px;align-items:center">
+        <label for="currentLanguageSelect">Current Language</label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select id="currentLanguageSelect" style="flex:1;padding:6px;border:1px solid #e5e5e5;border-radius:6px">
+            <option value="">(Select a language)</option>
+          </select>
+          <button id="addLanguageBtn" class="small-btn" title="Add a new language">Add Language</button>
+          <button id="editLanguageBtn" class="small-btn secondary" title="Edit current language">Edit</button>
+          <button id="exportLanguageBtn" class="small-btn secondary" title="Export current language settings">Export</button>
+          <button id="importLanguageBtn" class="small-btn secondary" title="Import language settings">Import</button>
+        </div>
+        
+        <label for="languageName">Language Name</label>
+        <input id="languageName" type="text" placeholder="e.g., Koine Greek" style="padding:6px;border:1px solid #e5e5e5;border-radius:6px" disabled />
+        
+        <label for="ethnologueCode">Ethnologue Code</label>
+        <input id="ethnologueCode" type="text" placeholder="e.g., grc" style="padding:6px;border:1px solid #e5e5e5;border-radius:6px" disabled />
+      </div>
+    </div>
+
 <!-- Abbreviations list (labels + optional definitions) -->
 <div id="abbrevPanel" class="abbrev-panel" aria-live="polite" data-collapsed="1" style="margin-left:12px">
   <div class="collapsible-header" id="abbrevHeader">
@@ -462,6 +484,25 @@
   <div class="collapsible-body">
     <div class="small-muted" style="margin-bottom:10px">Settings for text genres. These settings can be reused across different texts of the same genre.</div>
 
+    <!-- Genre Selector and Manager -->
+    <div style="margin-bottom:16px;padding:10px;background:#fff;border:1px solid #ffe2bf;border-radius:6px">
+      <div style="display:grid;grid-template-columns:140px 1fr;gap:8px 10px;align-items:center">
+        <label for="currentGenreSelect">Current Genre</label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select id="currentGenreSelect" style="flex:1;padding:6px;border:1px solid #e5e5e5;border-radius:6px">
+            <option value="">(Select a genre)</option>
+          </select>
+          <button id="addGenreBtn" class="small-btn" title="Add a new genre">Add Genre</button>
+          <button id="editGenreBtn" class="small-btn secondary" title="Edit current genre">Edit</button>
+          <button id="exportGenreBtn" class="small-btn secondary" title="Export current genre settings">Export</button>
+          <button id="importGenreBtn" class="small-btn secondary" title="Import genre settings">Import</button>
+        </div>
+        
+        <label for="genreName">Genre Name</label>
+        <input id="genreName" type="text" placeholder="e.g., Narrative, Procedural" style="padding:6px;border:1px solid #e5e5e5;border-radius:6px" disabled />
+      </div>
+    </div>
+
   <!-- Salience Bands (row color coding) - definitions only -->
   <div id="saliencePanel" class="prologue-panel" aria-live="polite" data-collapsed="1" style="margin-left:12px">
     <div class="collapsible-header" id="salienceHeader">
@@ -489,6 +530,25 @@
   </div>
   <div class="collapsible-body">
     <div class="small-muted" style="margin-bottom:10px">Settings specific to the current chart document.</div>
+
+    <!-- Document Selector and Manager -->
+    <div style="margin-bottom:16px;padding:10px;background:#fff;border:1px solid #cfe9cf;border-radius:6px">
+      <div style="display:grid;grid-template-columns:140px 1fr;gap:8px 10px;align-items:center">
+        <label for="currentDocumentSelect">Current Document</label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select id="currentDocumentSelect" style="flex:1;padding:6px;border:1px solid #e5e5e5;border-radius:6px">
+            <option value="">(Select a document)</option>
+          </select>
+          <button id="addDocumentBtn" class="small-btn" title="Add a new document">Add Document</button>
+          <button id="editDocumentBtn" class="small-btn secondary" title="Edit current document">Edit</button>
+          <button id="exportDocumentBtn" class="small-btn secondary" title="Export current document settings">Export</button>
+          <button id="importDocumentBtn" class="small-btn secondary" title="Import document settings">Import</button>
+        </div>
+        
+        <label for="documentName">Document Name</label>
+        <input id="documentName" type="text" placeholder="e.g., Mark Chapter 1" style="padding:6px;border:1px solid #e5e5e5;border-radius:6px" disabled />
+      </div>
+    </div>
 
 <!-- Optional heading and preface (HTML) to insert before a Text Chart -->
 <div id="prologuePanel" class="prologue-panel" aria-live="polite" data-collapsed="1" style="margin-left:12px">
@@ -686,6 +746,7 @@ function create(tag, attrs={}, text){
 }
 
 /* ===== Persistence keys and state ===== */
+// Legacy keys (for backward compatibility and migration)
 const LANG_PREFS_KEY = 'flex_xml_viewer_lang_prefs_v1';
 const WORDFORM_PREFS_KEY = 'flex_xml_viewer_wordform_prefs_v1';
 const TEXTCHART_PROLOGUE_KEY = 'flex_textchart_prologue_v1';
@@ -699,6 +760,12 @@ const SALIENCE_PREFS_KEY = 'flex_textchart_salience_bands_v1';
 const ROW_GUIDS_KEY = 'flex_textchart_row_guids_v1';
 const TOKEN_GUIDS_KEY = 'flex_textchart_token_guids_v1';
 const NOTE_GUIDS_KEY = 'flex_textchart_note_guids_v1';
+const NOTES_PREFS_KEY = 'flex_textchart_notes_prefs_v1';
+const COLLAPSE_STATE_KEY = 'flex_textchart_collapse_state_v1';
+
+// Hierarchical settings keys
+const HIERARCHICAL_SETTINGS_KEY = 'fdat_hierarchical_settings_v1';
+const CURRENT_CONTEXT_KEY = 'fdat_current_context_v1';
 
 // GUID utilities
 function newGuid(){
@@ -815,6 +882,346 @@ let globalState = {
 function saveJSON(key, obj){ try{ localStorage.setItem(key, JSON.stringify(obj)); } catch(e){} }
 function loadJSON(key){ try{ const s = localStorage.getItem(key); return s ? JSON.parse(s) : null; } catch(e){ return null; } }
 
+/* ===== Hierarchical Settings Management ===== */
+/**
+ * Hierarchical structure:
+ * {
+ *   appSettings: { ... app-level settings ... },
+ *   languages: {
+ *     [languageId]: {
+ *       id: string,
+ *       name: string,
+ *       ethnologueCode: string,
+ *       abbrevs: { ... abbreviations settings ... },
+ *       listRefs: { ... marker display settings ... },
+ *       genres: {
+ *         [genreId]: {
+ *           id: string,
+ *           name: string,
+ *           salienceBands: { ... salience band definitions ... },
+ *           documents: {
+ *             [documentId]: {
+ *               id: string,
+ *               name: string,
+ *               prologue: { ... },
+ *               postlogue: { ... },
+ *               freeTranslations: { ... },
+ *               notes: { ... },
+ *               salienceAssignments: { ... row assignments ... },
+ *               rowGuids: { ... },
+ *               tokenGuids: { ... },
+ *               noteGuids: { ... }
+ *             }
+ *           }
+ *         }
+ *       }
+ *     }
+ *   }
+ * }
+ */
+
+function loadHierarchicalSettings(){
+  const data = loadJSON(HIERARCHICAL_SETTINGS_KEY);
+  if(!data || typeof data !== 'object'){
+    // Initialize with default structure
+    return {
+      appSettings: {
+        printHeaders: false,
+        freezeHeaders: false,
+        showNames: false
+      },
+      languages: {}
+    };
+  }
+  return data;
+}
+
+function saveHierarchicalSettings(settings){
+  saveJSON(HIERARCHICAL_SETTINGS_KEY, settings);
+}
+
+function loadCurrentContext(){
+  const ctx = loadJSON(CURRENT_CONTEXT_KEY);
+  if(!ctx || typeof ctx !== 'object'){
+    return {
+      languageId: null,
+      genreId: null,
+      documentId: null
+    };
+  }
+  return ctx;
+}
+
+function saveCurrentContext(ctx){
+  saveJSON(CURRENT_CONTEXT_KEY, ctx);
+}
+
+function ensureLanguage(settings, languageId){
+  if(!settings.languages[languageId]){
+    settings.languages[languageId] = {
+      id: languageId,
+      name: '',
+      ethnologueCode: '',
+      abbrevs: { include: true, position: 'top', items: [] },
+      listRefs: { enforceMode: 'none', reverseOrder: false, items: [], groups: [] },
+      genres: {}
+    };
+  }
+  return settings.languages[languageId];
+}
+
+function ensureGenre(language, genreId){
+  if(!language.genres[genreId]){
+    language.genres[genreId] = {
+      id: genreId,
+      name: genreId === 'narrative' ? 'Narrative' : '',
+      salienceBands: {
+        enabled: true,
+        showLegend: true,
+        showColumn: false,
+        cellOnly: false,
+        opacity: 1,
+        tree: []
+      },
+      documents: {}
+    };
+  }
+  return language.genres[genreId];
+}
+
+function ensureDocument(genre, documentId){
+  if(!genre.documents[documentId]){
+    genre.documents[documentId] = {
+      id: documentId,
+      name: '',
+      prologue: { titleTag: 'h2', titleText: '', prefaceHtml: '', prefaceAuto: true },
+      postlogue: { html: '', auto: true },
+      freeTranslations: { mode: 'tooltip', items: {}, style: {} },
+      notes: { mode: 'inline', width: '' },
+      salienceAssignments: {},
+      rowGuids: { byIdx: {}, byLabel: {} },
+      tokenGuids: { byKey: {} },
+      noteGuids: { byRowGuid: {} },
+      beforeHtml: null,
+      beforeHtmlName: '',
+      afterHtml: null,
+      afterHtmlName: ''
+    };
+  }
+  return genre.documents[documentId];
+}
+
+function getCurrentLanguage(){
+  const ctx = loadCurrentContext();
+  if(!ctx.languageId) return null;
+  const settings = loadHierarchicalSettings();
+  return settings.languages[ctx.languageId] || null;
+}
+
+function getCurrentGenre(){
+  const lang = getCurrentLanguage();
+  if(!lang) return null;
+  const ctx = loadCurrentContext();
+  if(!ctx.genreId) return null;
+  return lang.genres[ctx.genreId] || null;
+}
+
+function getCurrentDocument(){
+  const genre = getCurrentGenre();
+  if(!genre) return null;
+  const ctx = loadCurrentContext();
+  if(!ctx.documentId) return null;
+  return genre.documents[ctx.documentId] || null;
+}
+
+function setCurrentContext(languageId, genreId, documentId){
+  const ctx = { languageId, genreId, documentId };
+  saveCurrentContext(ctx);
+  // Update all dependent settings
+  refreshAllSettingsFromContext();
+}
+
+function refreshAllSettingsFromContext(){
+  // This will sync the legacy storage keys with hierarchical data
+  const settings = loadHierarchicalSettings();
+  const ctx = loadCurrentContext();
+  
+  if(ctx.languageId && settings.languages[ctx.languageId]){
+    const lang = settings.languages[ctx.languageId];
+    
+    // Sync language-level settings
+    if(lang.abbrevs) saveJSON(ABBREV_PREFS_KEY, lang.abbrevs);
+    if(lang.listRefs) saveJSON(LISTREF_PREFS_KEY, lang.listRefs);
+    
+    if(ctx.genreId && lang.genres[ctx.genreId]){
+      const genre = lang.genres[ctx.genreId];
+      
+      // Sync genre-level settings
+      if(genre.salienceBands) saveJSON(SALIENCE_PREFS_KEY, genre.salienceBands);
+      
+      if(ctx.documentId && genre.documents[ctx.documentId]){
+        const doc = genre.documents[ctx.documentId];
+        
+        // Sync document-level settings
+        if(doc.prologue) saveJSON(TEXTCHART_PROLOGUE_KEY, doc.prologue);
+        if(doc.postlogue) saveJSON(TEXTCHART_POSTLOGUE_KEY, doc.postlogue);
+        if(doc.freeTranslations) saveJSON(FT_PREFS_KEY, doc.freeTranslations);
+        if(doc.notes) saveJSON(NOTES_PREFS_KEY, doc.notes);
+        if(doc.rowGuids) saveJSON(ROW_GUIDS_KEY, doc.rowGuids);
+        if(doc.tokenGuids) saveJSON(TOKEN_GUIDS_KEY, doc.tokenGuids);
+        if(doc.noteGuids) saveJSON(NOTE_GUIDS_KEY, doc.noteGuids);
+      }
+    }
+  }
+  
+  // App-level settings
+  if(settings.appSettings){
+    if(typeof settings.appSettings.printHeaders !== 'undefined'){
+      saveJSON(PRINT_HEADERS_KEY, { enabled: settings.appSettings.printHeaders });
+    }
+    if(typeof settings.appSettings.freezeHeaders !== 'undefined'){
+      saveJSON(FREEZE_HEADERS_KEY, { enabled: settings.appSettings.freezeHeaders });
+    }
+  }
+}
+
+function syncLegacyToHierarchical(){
+  // Sync changes from legacy storage back to hierarchical storage
+  const settings = loadHierarchicalSettings();
+  const ctx = loadCurrentContext();
+  
+  if(!ctx.languageId) return;
+  
+  const lang = settings.languages[ctx.languageId];
+  if(!lang) return;
+  
+  // Sync language-level settings from legacy storage
+  const abbrevs = loadJSON(ABBREV_PREFS_KEY);
+  if(abbrevs) lang.abbrevs = abbrevs;
+  
+  const listRefs = loadJSON(LISTREF_PREFS_KEY);
+  if(listRefs) lang.listRefs = listRefs;
+  
+  if(ctx.genreId && lang.genres[ctx.genreId]){
+    const genre = lang.genres[ctx.genreId];
+    
+    // Sync genre-level settings
+    const salience = loadJSON(SALIENCE_PREFS_KEY);
+    if(salience) genre.salienceBands = salience;
+    
+    if(ctx.documentId && genre.documents[ctx.documentId]){
+      const doc = genre.documents[ctx.documentId];
+      
+      // Sync document-level settings
+      const prologue = loadJSON(TEXTCHART_PROLOGUE_KEY);
+      if(prologue) doc.prologue = prologue;
+      
+      const postlogue = loadJSON(TEXTCHART_POSTLOGUE_KEY);
+      if(postlogue) doc.postlogue = postlogue;
+      
+      const ft = loadJSON(FT_PREFS_KEY);
+      if(ft) doc.freeTranslations = ft;
+      
+      const notes = loadJSON(NOTES_PREFS_KEY);
+      if(notes) doc.notes = notes;
+      
+      const rowGuids = loadJSON(ROW_GUIDS_KEY);
+      if(rowGuids) doc.rowGuids = rowGuids;
+      
+      const tokenGuids = loadJSON(TOKEN_GUIDS_KEY);
+      if(tokenGuids) doc.tokenGuids = tokenGuids;
+      
+      const noteGuids = loadJSON(NOTE_GUIDS_KEY);
+      if(noteGuids) doc.noteGuids = noteGuids;
+    }
+  }
+  
+  // App-level settings
+  const printHeaders = loadJSON(PRINT_HEADERS_KEY);
+  if(printHeaders && typeof printHeaders.enabled !== 'undefined'){
+    settings.appSettings.printHeaders = printHeaders.enabled;
+  }
+  
+  const freezeHeaders = loadJSON(FREEZE_HEADERS_KEY);
+  if(freezeHeaders && typeof freezeHeaders.enabled !== 'undefined'){
+    settings.appSettings.freezeHeaders = freezeHeaders.enabled;
+  }
+  
+  saveHierarchicalSettings(settings);
+}
+
+function migrateToHierarchical(){
+  // Check if already migrated
+  const existing = loadJSON(HIERARCHICAL_SETTINGS_KEY);
+  if(existing && existing.migrated) return;
+  
+  const settings = loadHierarchicalSettings();
+  
+  // Create a default language from existing settings
+  const defaultLangId = 'default';
+  const lang = ensureLanguage(settings, defaultLangId);
+  lang.name = 'Default Language';
+  
+  // Migrate language-level settings
+  const abbrevs = loadJSON(ABBREV_PREFS_KEY);
+  if(abbrevs) lang.abbrevs = abbrevs;
+  
+  const listRefs = loadJSON(LISTREF_PREFS_KEY);
+  if(listRefs) lang.listRefs = listRefs;
+  
+  // Create default genre
+  const defaultGenreId = 'narrative';
+  const genre = ensureGenre(lang, defaultGenreId);
+  
+  // Migrate genre-level settings
+  const salience = loadJSON(SALIENCE_PREFS_KEY);
+  if(salience) genre.salienceBands = salience;
+  
+  // Create default document
+  const defaultDocId = 'default';
+  const doc = ensureDocument(genre, defaultDocId);
+  doc.name = 'Current Document';
+  
+  // Migrate document-level settings
+  const prologue = loadJSON(TEXTCHART_PROLOGUE_KEY);
+  if(prologue) doc.prologue = prologue;
+  
+  const postlogue = loadJSON(TEXTCHART_POSTLOGUE_KEY);
+  if(postlogue) doc.postlogue = postlogue;
+  
+  const ft = loadJSON(FT_PREFS_KEY);
+  if(ft) doc.freeTranslations = ft;
+  
+  const notes = loadJSON(NOTES_PREFS_KEY);
+  if(notes) doc.notes = notes;
+  
+  const rowGuids = loadJSON(ROW_GUIDS_KEY);
+  if(rowGuids) doc.rowGuids = rowGuids;
+  
+  const tokenGuids = loadJSON(TOKEN_GUIDS_KEY);
+  if(tokenGuids) doc.tokenGuids = tokenGuids;
+  
+  const noteGuids = loadJSON(NOTE_GUIDS_KEY);
+  if(noteGuids) doc.noteGuids = noteGuids;
+  
+  // App-level settings
+  const printHeaders = loadJSON(PRINT_HEADERS_KEY);
+  if(printHeaders && typeof printHeaders.enabled !== 'undefined'){
+    settings.appSettings.printHeaders = printHeaders.enabled;
+  }
+  
+  const freezeHeaders = loadJSON(FREEZE_HEADERS_KEY);
+  if(freezeHeaders && typeof freezeHeaders.enabled !== 'undefined'){
+    settings.appSettings.freezeHeaders = freezeHeaders.enabled;
+  }
+  
+  settings.migrated = true;
+  saveHierarchicalSettings(settings);
+  
+  // Set current context to the default
+  setCurrentContext(defaultLangId, defaultGenreId, defaultDocId);
+}
+
 /* ===== File & UI wiring ===== */
 byId('fileInput').addEventListener('change', async e=>{
   const f = e.target.files && e.target.files[0];
@@ -897,6 +1304,9 @@ function suggestExportFilename(){
 
 // Export / Import Settings (localStorage backup)
 function collectAllSettings(){
+  // First sync legacy to hierarchical
+  syncLegacyToHierarchical();
+  
   const keys = [
     LANG_PREFS_KEY,
     WORDFORM_PREFS_KEY,
@@ -912,7 +1322,9 @@ function collectAllSettings(){
     ROW_GUIDS_KEY,
     TOKEN_GUIDS_KEY,
     NOTE_GUIDS_KEY,
-    COLLAPSE_STATE_KEY
+    COLLAPSE_STATE_KEY,
+    HIERARCHICAL_SETTINGS_KEY,
+    CURRENT_CONTEXT_KEY
   ];
   const out = {};
   keys.forEach(k=>{ try{ const v = localStorage.getItem(k); if(v !== null) out[k] = JSON.parse(v); } catch(_){ /* ignore parse errors */ } });
@@ -1045,7 +1457,6 @@ function initFreezeHeadersControl(){
 }
 
 /* ===== Collapsible panels (Text Chart settings) ===== */
-const COLLAPSE_STATE_KEY = 'flex_textchart_collapse_state_v1';
 function loadCollapseState(){ return loadJSON(COLLAPSE_STATE_KEY) || {}; }
 function saveCollapseState(s){ saveJSON(COLLAPSE_STATE_KEY, s); }
 function wireCollapsible(panelId, headerId){
@@ -3760,7 +4171,6 @@ function applyFreeTranslationsToArea(area){
 }
 
 /* ===== Notes options controls ===== */
-const NOTES_PREFS_KEY = 'flex_textchart_notes_prefs_v1';
 function loadNotesPrefs(){ const d = loadJSON(NOTES_PREFS_KEY) || {}; return { mode: d.mode || 'inline', width: d.width || '' }; }
 function saveNotesPrefs(p){ saveJSON(NOTES_PREFS_KEY, p); }
 function showNotesPanel(show){ const p = byId('notesPanel'); if(p) p.style.display = show ? 'block' : 'none'; }
@@ -4059,6 +4469,493 @@ function applySalienceBandsToArea(area){
   // Keep column cells in sync if present
   updateSalienceColumnCells(tbl);
 }
+
+/* ===== Hierarchical Settings UI Management ===== */
+function initHierarchicalSettingsUI(){
+  // Run migration first
+  migrateToHierarchical();
+  
+  // Initialize language controls
+  initLanguageControls();
+  initGenreControls();
+  initDocumentControls();
+  
+  // Update UI to reflect current context
+  updateContextUI();
+}
+
+function initLanguageControls(){
+  const select = byId('currentLanguageSelect');
+  const nameInput = byId('languageName');
+  const ethnoInput = byId('ethnologueCode');
+  const addBtn = byId('addLanguageBtn');
+  const editBtn = byId('editLanguageBtn');
+  const exportBtn = byId('exportLanguageBtn');
+  const importBtn = byId('importLanguageBtn');
+  
+  if(!select) return;
+  
+  // Populate language dropdown
+  function updateLanguageList(){
+    const settings = loadHierarchicalSettings();
+    const ctx = loadCurrentContext();
+    select.innerHTML = '<option value="">(Select a language)</option>';
+    Object.values(settings.languages).forEach(lang=>{
+      const opt = document.createElement('option');
+      opt.value = lang.id;
+      opt.textContent = lang.name || lang.id;
+      if(ctx.languageId === lang.id) opt.selected = true;
+      select.appendChild(opt);
+    });
+    updateLanguageInputs();
+  }
+  
+  function updateLanguageInputs(){
+    const lang = getCurrentLanguage();
+    if(lang){
+      nameInput.value = lang.name || '';
+      ethnoInput.value = lang.ethnologueCode || '';
+      nameInput.disabled = false;
+      ethnoInput.disabled = false;
+    } else {
+      nameInput.value = '';
+      ethnoInput.value = '';
+      nameInput.disabled = true;
+      ethnoInput.disabled = true;
+    }
+  }
+  
+  select.addEventListener('change', ()=>{
+    const ctx = loadCurrentContext();
+    ctx.languageId = select.value || null;
+    // Reset genre and document when changing language
+    ctx.genreId = null;
+    ctx.documentId = null;
+    saveCurrentContext(ctx);
+    updateLanguageInputs();
+    updateGenreList();
+    updateDocumentList();
+    refreshAllSettingsFromContext();
+  });
+  
+  nameInput.addEventListener('change', ()=>{
+    const settings = loadHierarchicalSettings();
+    const ctx = loadCurrentContext();
+    if(ctx.languageId && settings.languages[ctx.languageId]){
+      settings.languages[ctx.languageId].name = nameInput.value.trim();
+      saveHierarchicalSettings(settings);
+      updateLanguageList();
+    }
+  });
+  
+  ethnoInput.addEventListener('change', ()=>{
+    const settings = loadHierarchicalSettings();
+    const ctx = loadCurrentContext();
+    if(ctx.languageId && settings.languages[ctx.languageId]){
+      settings.languages[ctx.languageId].ethnologueCode = ethnoInput.value.trim();
+      saveHierarchicalSettings(settings);
+    }
+  });
+  
+  addBtn?.addEventListener('click', ()=>{
+    const name = prompt('Enter language name:');
+    if(!name) return;
+    const id = 'lang_' + Date.now().toString(36);
+    const settings = loadHierarchicalSettings();
+    const lang = ensureLanguage(settings, id);
+    lang.name = name.trim();
+    // Create default genre
+    const genreId = 'narrative';
+    const genre = ensureGenre(lang, genreId);
+    saveHierarchicalSettings(settings);
+    setCurrentContext(id, genreId, null);
+    updateLanguageList();
+    updateGenreList();
+  });
+  
+  editBtn?.addEventListener('click', ()=>{
+    const ctx = loadCurrentContext();
+    if(!ctx.languageId){
+      alert('Please select a language first.');
+      return;
+    }
+    nameInput.disabled = false;
+    ethnoInput.disabled = false;
+    nameInput.focus();
+  });
+  
+  exportBtn?.addEventListener('click', ()=>{
+    const settings = loadHierarchicalSettings();
+    const ctx = loadCurrentContext();
+    if(!ctx.languageId || !settings.languages[ctx.languageId]){
+      alert('Please select a language first.');
+      return;
+    }
+    const lang = settings.languages[ctx.languageId];
+    const data = { language: lang };
+    const filename = `fdat-language-${lang.name || ctx.languageId}-${new Date().toISOString().slice(0,10)}.json`;
+    downloadJSON(filename, data);
+  });
+  
+  importBtn?.addEventListener('click', ()=>{
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'application/json,.json';
+    input.addEventListener('change', async (e)=>{
+      const f = e.target.files && e.target.files[0];
+      if(!f) return;
+      try{
+        const txt = await f.text();
+        const data = JSON.parse(txt);
+        if(!data.language || !data.language.id){
+          alert('Invalid language export file.');
+          return;
+        }
+        const settings = loadHierarchicalSettings();
+        // Generate new ID to avoid conflicts
+        const newId = 'lang_' + Date.now().toString(36);
+        data.language.id = newId;
+        settings.languages[newId] = data.language;
+        saveHierarchicalSettings(settings);
+        setCurrentContext(newId, null, null);
+        updateLanguageList();
+        updateGenreList();
+        alert('Language imported successfully.');
+      }catch(err){
+        alert('Failed to import language: ' + (err?.message || String(err)));
+      }
+    });
+    input.click();
+  });
+  
+  updateLanguageList();
+}
+
+function initGenreControls(){
+  const select = byId('currentGenreSelect');
+  const nameInput = byId('genreName');
+  const addBtn = byId('addGenreBtn');
+  const editBtn = byId('editGenreBtn');
+  const exportBtn = byId('exportGenreBtn');
+  const importBtn = byId('importGenreBtn');
+  
+  if(!select) return;
+  
+  function updateGenreInputs(){
+    const genre = getCurrentGenre();
+    if(genre){
+      nameInput.value = genre.name || '';
+      nameInput.disabled = false;
+    } else {
+      nameInput.value = '';
+      nameInput.disabled = true;
+    }
+  }
+  
+  select.addEventListener('change', ()=>{
+    const ctx = loadCurrentContext();
+    ctx.genreId = select.value || null;
+    // Reset document when changing genre
+    ctx.documentId = null;
+    saveCurrentContext(ctx);
+    updateGenreInputs();
+    updateDocumentList();
+    refreshAllSettingsFromContext();
+  });
+  
+  nameInput.addEventListener('change', ()=>{
+    const lang = getCurrentLanguage();
+    const ctx = loadCurrentContext();
+    if(lang && ctx.genreId && lang.genres[ctx.genreId]){
+      lang.genres[ctx.genreId].name = nameInput.value.trim();
+      const settings = loadHierarchicalSettings();
+      saveHierarchicalSettings(settings);
+      updateGenreList();
+    }
+  });
+  
+  addBtn?.addEventListener('click', ()=>{
+    const ctx = loadCurrentContext();
+    if(!ctx.languageId){
+      alert('Please select a language first.');
+      return;
+    }
+    const name = prompt('Enter genre name:', 'Narrative');
+    if(!name) return;
+    const id = 'genre_' + Date.now().toString(36);
+    const settings = loadHierarchicalSettings();
+    const lang = settings.languages[ctx.languageId];
+    if(!lang) return;
+    const genre = ensureGenre(lang, id);
+    genre.name = name.trim();
+    saveHierarchicalSettings(settings);
+    ctx.genreId = id;
+    ctx.documentId = null;
+    saveCurrentContext(ctx);
+    updateGenreList();
+    updateDocumentList();
+    refreshAllSettingsFromContext();
+  });
+  
+  editBtn?.addEventListener('click', ()=>{
+    const ctx = loadCurrentContext();
+    if(!ctx.genreId){
+      alert('Please select a genre first.');
+      return;
+    }
+    nameInput.disabled = false;
+    nameInput.focus();
+  });
+  
+  exportBtn?.addEventListener('click', ()=>{
+    const genre = getCurrentGenre();
+    const ctx = loadCurrentContext();
+    if(!genre){
+      alert('Please select a genre first.');
+      return;
+    }
+    const data = { genre: genre };
+    const filename = `fdat-genre-${genre.name || ctx.genreId}-${new Date().toISOString().slice(0,10)}.json`;
+    downloadJSON(filename, data);
+  });
+  
+  importBtn?.addEventListener('click', ()=>{
+    const ctx = loadCurrentContext();
+    if(!ctx.languageId){
+      alert('Please select a language first.');
+      return;
+    }
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'application/json,.json';
+    input.addEventListener('change', async (e)=>{
+      const f = e.target.files && e.target.files[0];
+      if(!f) return;
+      try{
+        const txt = await f.text();
+        const data = JSON.parse(txt);
+        if(!data.genre || !data.genre.id){
+          alert('Invalid genre export file.');
+          return;
+        }
+        const settings = loadHierarchicalSettings();
+        const lang = settings.languages[ctx.languageId];
+        if(!lang) return;
+        // Generate new ID to avoid conflicts
+        const newId = 'genre_' + Date.now().toString(36);
+        data.genre.id = newId;
+        lang.genres[newId] = data.genre;
+        saveHierarchicalSettings(settings);
+        ctx.genreId = newId;
+        ctx.documentId = null;
+        saveCurrentContext(ctx);
+        updateGenreList();
+        updateDocumentList();
+        refreshAllSettingsFromContext();
+        alert('Genre imported successfully.');
+      }catch(err){
+        alert('Failed to import genre: ' + (err?.message || String(err)));
+      }
+    });
+    input.click();
+  });
+  
+  updateGenreInputs();
+}
+
+function updateGenreList(){
+  const select = byId('currentGenreSelect');
+  if(!select) return;
+  const lang = getCurrentLanguage();
+  const ctx = loadCurrentContext();
+  select.innerHTML = '<option value="">(Select a genre)</option>';
+  if(lang){
+    Object.values(lang.genres).forEach(genre=>{
+      const opt = document.createElement('option');
+      opt.value = genre.id;
+      opt.textContent = genre.name || genre.id;
+      if(ctx.genreId === genre.id) opt.selected = true;
+      select.appendChild(opt);
+    });
+  }
+  const genre = getCurrentGenre();
+  const nameInput = byId('genreName');
+  if(genre && nameInput){
+    nameInput.value = genre.name || '';
+    nameInput.disabled = false;
+  } else if(nameInput){
+    nameInput.value = '';
+    nameInput.disabled = true;
+  }
+}
+
+function initDocumentControls(){
+  const select = byId('currentDocumentSelect');
+  const nameInput = byId('documentName');
+  const addBtn = byId('addDocumentBtn');
+  const editBtn = byId('editDocumentBtn');
+  const exportBtn = byId('exportDocumentBtn');
+  const importBtn = byId('importDocumentBtn');
+  
+  if(!select) return;
+  
+  function updateDocumentInputs(){
+    const doc = getCurrentDocument();
+    if(doc){
+      nameInput.value = doc.name || '';
+      nameInput.disabled = false;
+    } else {
+      nameInput.value = '';
+      nameInput.disabled = true;
+    }
+  }
+  
+  select.addEventListener('change', ()=>{
+    const ctx = loadCurrentContext();
+    ctx.documentId = select.value || null;
+    saveCurrentContext(ctx);
+    updateDocumentInputs();
+    refreshAllSettingsFromContext();
+  });
+  
+  nameInput.addEventListener('change', ()=>{
+    const doc = getCurrentDocument();
+    if(doc){
+      doc.name = nameInput.value.trim();
+      const settings = loadHierarchicalSettings();
+      saveHierarchicalSettings(settings);
+      updateDocumentList();
+    }
+  });
+  
+  addBtn?.addEventListener('click', ()=>{
+    const ctx = loadCurrentContext();
+    if(!ctx.genreId){
+      alert('Please select a genre first.');
+      return;
+    }
+    const name = prompt('Enter document name:');
+    if(!name) return;
+    const id = 'doc_' + Date.now().toString(36);
+    const genre = getCurrentGenre();
+    if(!genre) return;
+    const doc = ensureDocument(genre, id);
+    doc.name = name.trim();
+    const settings = loadHierarchicalSettings();
+    saveHierarchicalSettings(settings);
+    ctx.documentId = id;
+    saveCurrentContext(ctx);
+    updateDocumentList();
+    refreshAllSettingsFromContext();
+  });
+  
+  editBtn?.addEventListener('click', ()=>{
+    const ctx = loadCurrentContext();
+    if(!ctx.documentId){
+      alert('Please select a document first.');
+      return;
+    }
+    nameInput.disabled = false;
+    nameInput.focus();
+  });
+  
+  exportBtn?.addEventListener('click', ()=>{
+    const doc = getCurrentDocument();
+    const ctx = loadCurrentContext();
+    if(!doc){
+      alert('Please select a document first.');
+      return;
+    }
+    const data = { document: doc };
+    const filename = `fdat-document-${doc.name || ctx.documentId}-${new Date().toISOString().slice(0,10)}.json`;
+    downloadJSON(filename, data);
+  });
+  
+  importBtn?.addEventListener('click', ()=>{
+    const ctx = loadCurrentContext();
+    if(!ctx.genreId){
+      alert('Please select a genre first.');
+      return;
+    }
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'application/json,.json';
+    input.addEventListener('change', async (e)=>{
+      const f = e.target.files && e.target.files[0];
+      if(!f) return;
+      try{
+        const txt = await f.text();
+        const data = JSON.parse(txt);
+        if(!data.document || !data.document.id){
+          alert('Invalid document export file.');
+          return;
+        }
+        const genre = getCurrentGenre();
+        if(!genre) return;
+        // Generate new ID to avoid conflicts
+        const newId = 'doc_' + Date.now().toString(36);
+        data.document.id = newId;
+        genre.documents[newId] = data.document;
+        const settings = loadHierarchicalSettings();
+        saveHierarchicalSettings(settings);
+        ctx.documentId = newId;
+        saveCurrentContext(ctx);
+        updateDocumentList();
+        refreshAllSettingsFromContext();
+        alert('Document imported successfully.');
+      }catch(err){
+        alert('Failed to import document: ' + (err?.message || String(err)));
+      }
+    });
+    input.click();
+  });
+  
+  updateDocumentInputs();
+}
+
+function updateDocumentList(){
+  const select = byId('currentDocumentSelect');
+  if(!select) return;
+  const genre = getCurrentGenre();
+  const ctx = loadCurrentContext();
+  select.innerHTML = '<option value="">(Select a document)</option>';
+  if(genre){
+    Object.values(genre.documents).forEach(doc=>{
+      const opt = document.createElement('option');
+      opt.value = doc.id;
+      opt.textContent = doc.name || doc.id;
+      if(ctx.documentId === doc.id) opt.selected = true;
+      select.appendChild(opt);
+    });
+  }
+  const doc = getCurrentDocument();
+  const nameInput = byId('documentName');
+  if(doc && nameInput){
+    nameInput.value = doc.name || '';
+    nameInput.disabled = false;
+  } else if(nameInput){
+    nameInput.value = '';
+    nameInput.disabled = true;
+  }
+}
+
+function updateContextUI(){
+  updateGenreList();
+  updateDocumentList();
+}
+
+// Initialize on page load
+if(document.readyState === 'loading'){
+  document.addEventListener('DOMContentLoaded', initHierarchicalSettingsUI);
+} else {
+  initHierarchicalSettingsUI();
+}
+
+// Sync legacy storage to hierarchical before page unload
+window.addEventListener('beforeunload', syncLegacyToHierarchical);
+
+// Also sync periodically (every 5 seconds) to catch settings changes
+setInterval(syncLegacyToHierarchical, 5000);
 </script>
 </body>
 </html>

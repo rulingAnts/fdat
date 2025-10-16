@@ -79,6 +79,11 @@ The desktop app bundles the same viewer for offline use.
 ### Discourse Analysis Tool
 - Resize columns: click and drag column borders in the second header row
 - Configure display: use the collapsible panels to customize prologue, abbreviations, salience bands, free translations, and notes
+- **Hierarchical Settings**: Organize your settings by Language → Genre → Document
+  - **Language Projects**: Add multiple languages with names and ethnologue codes. Language-level settings include abbreviations and marker display preferences that apply across all texts in that language.
+  - **Text Genres**: Within each language, create genres (e.g., "Narrative", "Procedural"). Genre-level settings include salience band definitions.
+  - **Documents**: Within each genre, manage individual documents. Document-level settings include prologues, epilogues, free translations, and row-specific assignments.
+  - Import/Export at each level: Export a language's settings to reuse across projects, or export a genre to apply to different languages.
 - Export: use "Export Discourse Chart" to open in a new window with export toolbar
 - "Save as HTML" embeds current styles and formatting for a complete snapshot
 
