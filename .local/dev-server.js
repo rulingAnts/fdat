@@ -7,9 +7,11 @@
 const http = require('http');
 const path = require('path');
 const fs = require('fs');
+const { spawn } = require('child_process');
 
 const root = path.resolve(__dirname, '..', 'docs');
 const port = process.env.PORT ? Number(process.env.PORT) : 5173;
+const shouldOpen = !('NO_OPEN' in process.env) && !process.argv.includes('--no-open');
 
 const mime = {
   '.html': 'text/html; charset=utf-8',
@@ -97,4 +99,35 @@ server.listen(port, () => {
   console.log(`Local test server running at http://localhost:${port}`);
   console.log('Serving web root:', root);
   console.log('Default page: /index.html');
+
+  if (shouldOpen) {
+    const url = `http://localhost:${port}/`;
+    try {
+      console.log('Opening default browser at:', url);
+      openBrowser(url);
+    } catch (e) {
+      console.warn('Could not open the browser automatically. You can open:', url);
+    }
+  } else {
+    console.log('Auto-open disabled. Set NO_OPEN=1 or pass --no-open to control this behavior.');
+  }
 });
+
+function openBrowser(url) {
+  const platform = process.platform;
+  if (platform === 'darwin') {
+    // macOS
+    const child = spawn('open', [url], { stdio: 'ignore', detached: true });
+    child.unref();
+    return;
+  }
+  if (platform === 'win32') {
+    // Windows
+    const child = spawn('cmd', ['/c', 'start', '', url], { stdio: 'ignore', detached: true });
+    child.unref();
+    return;
+  }
+  // Linux and others
+  const child = spawn('xdg-open', [url], { stdio: 'ignore', detached: true });
+  child.unref();
+}

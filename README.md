@@ -88,6 +88,24 @@ npm install
 npm start
 ```
 
+Local web dev server (PWA)
+
+```bash
+# Serve the web app from docs/ at http://localhost:5173 and auto-open your browser
+npm run dev:web
+
+# Disable auto-open for this run
+npm run dev:web -- --no-open
+
+# Change the port
+PORT=8080 npm run dev:web
+```
+
+Notes
+- The dev server serves the PWA from `docs/` and sets headers to avoid caching XML/XSL while developing.
+- It will try to open your default browser automatically; set `NO_OPEN=1` or pass `--no-open` to skip.
+- Service Worker/PWA features work on localhost, but not from file:// URLs.
+
 Build installers
 ```bash
 # Windows (NSIS + Portable)
