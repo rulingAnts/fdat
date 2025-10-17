@@ -4,6 +4,9 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>Flex DiscourseChart Analysis Tool (FDAT)</title>
+<link rel="manifest" href="./manifest.webmanifest">
+<meta name="theme-color" content="#0b6edb">
+<link rel="apple-touch-icon" href="./assets/icon-128.png">
 <style>
   :root{
     --accent:#0b6edb;
@@ -732,6 +735,46 @@
 </footer>
 
 <script>
+// Register Service Worker for PWA offline + updates
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    function showUpdateToast(onReload){
+      const t = document.createElement('div');
+      t.style.position = 'fixed'; t.style.bottom = '16px'; t.style.left = '50%'; t.style.transform = 'translateX(-50%)';
+      t.style.background = '#111'; t.style.color = '#fff'; t.style.padding = '8px 12px'; t.style.borderRadius = '999px'; t.style.boxShadow = '0 6px 22px rgba(0,0,0,0.35)';
+      t.style.zIndex = '100000'; t.style.display = 'flex'; t.style.alignItems = 'center'; t.style.gap = '10px';
+      t.textContent = 'Update available';
+      const btn = document.createElement('button'); btn.textContent = 'Reload'; btn.style.background = '#0b6edb'; btn.style.color = '#fff'; btn.style.border = 'none'; btn.style.padding = '6px 10px'; btn.style.borderRadius = '999px'; btn.style.cursor = 'pointer';
+      btn.addEventListener('click', ()=>{ onReload && onReload(); document.body.removeChild(t); });
+      t.appendChild(btn); document.body.appendChild(t);
+    }
+    navigator.serviceWorker.register('./sw.js').then(reg => {
+      // If there is a waiting worker (already installed but not active), offer to reload now
+      if (reg.waiting) {
+        showUpdateToast(() => {
+          reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+          reg.waiting.addEventListener('statechange', () => { if (reg.waiting.state === 'activated') location.reload(); });
+        });
+      }
+      reg.addEventListener('updatefound', () => {
+        const newWorker = reg.installing;
+        if (!newWorker) return;
+        newWorker.addEventListener('statechange', () => {
+          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+            showUpdateToast(() => {
+              if (reg.waiting) {
+                reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+                reg.waiting.addEventListener('statechange', () => { if (reg.waiting.state === 'activated') location.reload(); });
+              } else {
+                location.reload();
+              }
+            });
+          }
+        });
+      });
+    }).catch(console.warn);
+  });
+}
 /* ===== Helpers ===== */
 const byId = id => document.getElementById(id);
 const escapeHtml = s => String(s||'').replace(/[&<>"]/g, c=>'&' + ({'&':'amp','<':'lt','>':'gt','"':'quot'})[c] + ';');
