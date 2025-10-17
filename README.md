@@ -106,6 +106,27 @@ Notes
 - It will try to open your default browser automatically; set `NO_OPEN=1` or pass `--no-open` to skip.
 - Service Worker/PWA features work on localhost, but not from file:// URLs.
 
+Android Emulator PWA test
+
+```bash
+# One command: boots an emulator, sets adb reverse, and opens Chrome to the app
+npm run dev:android_pwa
+
+# Options
+PORT=8080 npm run dev:android_pwa               # change port
+npm run dev:android_pwa -- --avd=Pixel_7_Pro    # pick AVD by name
+npm run dev:android_pwa -- --no-remember        # do not remember last AVD
+```
+
+What it does
+- Detects Android SDK tools (emulator, adb) or prints guidance if missing
+- Lists AVDs for selection (remembers your last choice)
+- Starts the local web server without opening your desktop browser
+- Boots the emulator, waits for boot, runs `adb reverse tcp:<PORT> tcp:<PORT>`
+- Opens Chrome inside the emulator to http://localhost:<PORT>/ so PWA/Service Worker work
+
+Tip: If Chrome doesn’t open automatically, open it manually and navigate to the URL shown in the terminal.
+
 Build installers
 ```bash
 # Windows (NSIS + Portable)

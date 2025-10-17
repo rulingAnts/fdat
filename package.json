@@ -10,6 +10,7 @@
   "scripts": {
     "start": "electron .",
     "dev:web": "node .local/dev-server.js",
+    "dev:android_pwa": "node .local/dev-android-pwa.js",
     "pack": "electron-builder --dir",
     "dist": "electron-builder",
     "dist:win": "electron-builder --win nsis",
