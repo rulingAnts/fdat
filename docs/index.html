@@ -311,7 +311,10 @@
 
 <header>
   <h1>Flex DiscourseChart Analysis Tool (FDAT)</h1>
-  <div style="margin-left:auto" class="small-muted" hidden>© 2025 Seth Johnston</div>
+  <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+    <button id="pwaInstallBtn" class="small-btn secondary" style="display:none" title="Install this app on your device">Install App</button>
+    <div class="small-muted" hidden>© 2025 Seth Johnston</div>
+  </div>
 </header>
 
   <section id="aboutPanel" class="prologue-panel" aria-live="polite" data-collapsed="0" data-no-persist="1" style="background:#eef5ff;border:1px solid #c8dbff;padding:0;border-radius:8px;margin-bottom:12px">
@@ -775,6 +778,65 @@ if ('serviceWorker' in navigator) {
     }).catch(console.warn);
   });
 }
+
+// ===== PWA Install (tablet-only if possible) =====
+(function(){
+  const installBtn = document.getElementById('pwaInstallBtn');
+  let deferredPrompt = null;
+
+  function isStandalone(){
+    return window.matchMedia && window.matchMedia('(display-mode: standalone)').matches
+      || window.navigator.standalone === true;
+  }
+  function isiOS(){
+    const ua = window.navigator.userAgent || '';
+    return /iPad|iPhone|iPod/.test(ua) || (ua.includes('Mac') && navigator.maxTouchPoints > 1);
+  }
+  function isAndroid(){
+    return /Android/i.test(window.navigator.userAgent || '');
+  }
+  function isTablet(){
+    const w = Math.max(window.screen?.width || 0, window.innerWidth || 0);
+    const h = Math.max(window.screen?.height || 0, window.innerHeight || 0);
+    const minDim = Math.min(w, h);
+    const touch = (navigator.maxTouchPoints || 0) > 0;
+    // Heuristic: touch device and at least 768px on the short side
+    return touch && minDim >= 768;
+  }
+
+  // iPad: show an instruction banner (no beforeinstallprompt on Safari)
+  function showIOSInstallHint(){
+    if(!isiOS() || !isTablet() || isStandalone()) return;
+    const b = document.createElement('div');
+    b.style.position='fixed'; b.style.bottom='16px'; b.style.left='50%'; b.style.transform='translateX(-50%)';
+    b.style.background='#111'; b.style.color='#fff'; b.style.padding='10px 12px'; b.style.borderRadius='12px'; b.style.boxShadow='0 6px 22px rgba(0,0,0,0.35)'; b.style.zIndex='100000'; b.style.maxWidth='90vw';
+    b.innerHTML = 'To install FDAT: tap the Share icon <span aria-hidden="true">▵</span> and choose <strong>Add to Home Screen</strong>.';
+    const close = document.createElement('button'); close.textContent='✕'; close.style.marginLeft='10px'; close.style.background='transparent'; close.style.color='#fff'; close.style.border='none'; close.style.cursor='pointer'; close.style.fontSize='1rem';
+    close.addEventListener('click', ()=> document.body.removeChild(b));
+    b.appendChild(close); document.body.appendChild(b);
+  }
+
+  window.addEventListener('beforeinstallprompt', (e)=>{
+    // Android/Chromium: intercept and show our button when tablet heuristics pass
+    e.preventDefault();
+    deferredPrompt = e;
+    if(!isStandalone() && isTablet() && isAndroid()){
+      if(installBtn){ installBtn.style.display='inline-flex'; }
+    }
+  });
+
+  if(installBtn){
+    installBtn.addEventListener('click', async ()=>{
+      if(!deferredPrompt) return;
+      deferredPrompt.prompt();
+      try{ await deferredPrompt.userChoice; }catch(_){/* ignore */}
+      deferredPrompt = null; installBtn.style.display='none';
+    });
+  }
+
+  // On load, show iPad hint if applicable
+  window.addEventListener('load', showIOSInstallHint);
+})();
 /* ===== Helpers ===== */
 const byId = id => document.getElementById(id);
 const escapeHtml = s => String(s||'').replace(/[&<>"]/g, c=>'&' + ({'&':'amp','<':'lt','>':'gt','"':'quot'})[c] + ';');

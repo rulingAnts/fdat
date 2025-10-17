@@ -36,6 +36,18 @@ For Lists, Phonology, Wordforms, or generic FLEx XML, use the companion viewer: 
 
 All processing is local in your browser; your files are not uploaded.
 
+### Offline and Installable (PWA)
+
+FDAT is a Progressive Web App (PWA):
+
+- Works offline after first load (caches core files on your device).
+- Auto-updates: when a new version is published, you’ll be prompted to reload.
+- Install on tablets:
+  - Android tablets (Chrome/Edge): tap the “Install App” button when shown, or use the browser menu → Install.
+  - iPad (Safari): use Share → Add to Home Screen (Apple doesn’t show a native install prompt).
+
+When launched from the home screen, FDAT opens in standalone mode (minimal browser UI, no address bar), similar to a native app.
+
 ## Download for Windows, Mac, or Linux
 
 1. Go to the latest release: [https://github.com/rulingAnts/fdat/releases/latest](https://github.com/rulingAnts/fdat/releases/latest)
