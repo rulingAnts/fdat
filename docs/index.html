@@ -734,7 +734,7 @@
 <footer>
   <div>© 2025 Seth Johnston. This software is licensed under the <a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener noreferrer">GNU Affero General Public License v3.0 (AGPL-3.0)</a>.</div>
   <div>The vast majority of this code was generated collaboratively with <strong>ChatGPT (GPT-5)</strong> by OpenAI, under the author’s direction and guidance.</div>
-  <div>Download the latest Installer or Portable App <a href="https://github.com/rulingAnts/fdat/releases/latest" target="_blank" rel="noopener noreferrer">here</a>.</div>
+  <div>Download the latest Desktop (Windows/Mac/Linux) Installer or Portable App <a href="https://github.com/rulingAnts/fdat/releases/latest" target="_blank" rel="noopener noreferrer">here</a>.</div>
 </footer>
 
 <script>
@@ -836,6 +836,43 @@ if ('serviceWorker' in navigator) {
 
   // On load, show iPad hint if applicable
   window.addEventListener('load', showIOSInstallHint);
+})();
+
+// ===== PWA run/install detection =====
+(function(){
+  try{
+    const LS_KEY = 'fdat_pwa_run_state_v1';
+    function load(){ try{ const s = localStorage.getItem(LS_KEY); return s ? JSON.parse(s) : {}; } catch(_) { return {}; } }
+    function save(obj){ try{ localStorage.setItem(LS_KEY, JSON.stringify(obj)); } catch(_) {}
+    }
+    function isStandalone(){
+      return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+        || (window.navigator.standalone === true);
+    }
+    const nowIso = new Date().toISOString();
+    const state = load();
+    if(!state.firstSeen){ state.firstSeen = nowIso; }
+    state.lastSeen = nowIso;
+    state.isStandalone = isStandalone();
+    // Persist and expose a simple status for tooling (e.g., dev:android_pwa)
+    save(state);
+    window.FDAT_PWA_STATUS = {
+      ...state,
+      // convenient booleans
+      firstRun: state.firstSeen === state.lastSeen,
+      installed: state.isStandalone === true
+    };
+    // Log once per session for visibility during testing
+    if(!sessionStorage.getItem('fdat_pwa_status_logged')){
+      console.log('[FDAT] PWA status:', window.FDAT_PWA_STATUS);
+      sessionStorage.setItem('fdat_pwa_status_logged','1');
+    }
+    // When the PWA is installed from browser, mark state immediately
+    window.addEventListener('appinstalled', ()=>{
+      const s = load(); s.isStandalone = true; save(s);
+      console.log('[FDAT] PWA installed');
+    });
+  }catch(_){/* ignore */}
 })();
 /* ===== Helpers ===== */
 const byId = id => document.getElementById(id);

@@ -113,9 +113,11 @@ Android Emulator PWA test
 npm run dev:android_pwa
 
 # Options
-PORT=8080 npm run dev:android_pwa               # change port
-npm run dev:android_pwa -- --avd=Pixel_7_Pro    # pick AVD by name
-npm run dev:android_pwa -- --no-remember        # do not remember last AVD
+PORT=8080 npm run dev:android_pwa                 # change port
+npm run dev:android_pwa -- --avd=Pixel_7_Pro      # pick AVD by name
+npm run dev:android_pwa -- --no-remember          # do not remember last AVD
+npm run dev:android_pwa -- --open-device=true     # auto open on the emulator
+npm run dev:android_pwa -- --no-open-device       # never open on the emulator
 ```
 
 What it does
@@ -123,7 +125,9 @@ What it does
 - Lists AVDs for selection (remembers your last choice)
 - Starts the local web server without opening your desktop browser
 - Boots the emulator, waits for boot, runs `adb reverse tcp:<PORT> tcp:<PORT>`
-- Opens Chrome inside the emulator to http://localhost:<PORT>/ so PWA/Service Worker work
+- Optionally opens the app on the emulator (prompt defaults to No). If Yes:
+  - If installed as a PWA WebAPK, launches that
+  - Otherwise opens Chrome to http://localhost:<PORT>/
 
 Tip: If Chrome doesn’t open automatically, open it manually and navigate to the URL shown in the terminal.
 

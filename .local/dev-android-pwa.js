@@ -62,6 +62,9 @@ async function main() {
   const chosenAvd = await chooseAvd(avds, { defaultAvd, cliAvd: ARGS.avd });
   if (REMEMBER) setLastAvd(chosenAvd);
 
+  // Ask if this is a first run (install flow) before launching the AVD
+  const isFirstRun = await shouldFirstRunPrompt();
+
   // Start dev server
   const devServer = startDevServer(PORT);
 
@@ -83,9 +86,14 @@ async function main() {
   await adbReverse(adbBin, serial, PORT);
   console.log(`adb reverse tcp:${PORT} -> tcp:${PORT} set on ${serial}`);
 
-  // Open Chrome to localhost
-  await openChrome(adbBin, serial, `http://localhost:${PORT}/`);
-  console.log('Requested Chrome to open PWA URL.');
+  const baseUrl = `http://localhost:${PORT}/`;
+  // Single-decision behavior: if first run, open Chrome for install; otherwise do nothing
+  if (isFirstRun) {
+    await openChrome(adbBin, serial, baseUrl);
+    console.log('Opened Chrome for first-run install (use the Install prompt to add to Home screen).');
+  } else {
+    console.log('First run = No. Not opening Chrome. Find and open the installed app on the emulator.');
+  }
 
   // Handle cleanup
   setupCleanup({ devServer, adbBin, serial, port: PORT, emulatorProc: emu });
@@ -285,6 +293,61 @@ async function openChrome(adbBin, serial, url) {
   console.warn('Could not programmatically open Chrome. Open the URL manually in the emulator.');
 }
 
+function findInstalledWebApkForUrl(adbBin, serial, baseUrl) {
+  try {
+    const pkgs = listPackagesByPrefix(adbBin, serial, ['org.chromium.webapk', 'com.google.android.webapk']);
+    for (const pkg of pkgs) {
+      const meta = getWebApkMeta(adbBin, serial, pkg);
+      if (!meta) continue;
+      const { startUrl, manifestUrl } = meta;
+      if ((startUrl && startUrl.startsWith(baseUrl)) || (manifestUrl && manifestUrl.startsWith(baseUrl))) {
+        return pkg;
+      }
+    }
+  } catch {}
+  return null;
+}
+
+function listPackagesByPrefix(adbBin, serial, prefixes) {
+  const res = spawnSync(adbBin, ['-s', serial, 'shell', 'pm', 'list', 'packages'], { encoding: 'utf8' });
+  if (res.status !== 0) return [];
+  const lines = (res.stdout || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const pkgs = [];
+  for (const l of lines) {
+    const m = l.match(/^package:([^\s]+)$/);
+    if (!m) continue;
+    const name = m[1];
+    if (prefixes.some(p => name.startsWith(p))) pkgs.push(name);
+  }
+  return pkgs;
+}
+
+function getWebApkMeta(adbBin, serial, pkg) {
+  const res = spawnSync(adbBin, ['-s', serial, 'shell', 'dumpsys', 'package', pkg], { encoding: 'utf8', maxBuffer: 1024 * 1024 });
+  if (res.status !== 0) return null;
+  const out = res.stdout || '';
+  // Look for meta-data lines; keys are typically like:
+  //   org.chromium.webapk.shell_apk.h2.startUrl
+  //   org.chromium.webapk.shell_apk.h2.manifestUrl
+  const startUrl = matchMeta(out, /org\.chromium\.webapk\.shell_apk\.h2\.startUrl.*?=\s*(\S+)/i);
+  const manifestUrl = matchMeta(out, /org\.chromium\.webapk\.shell_apk\.h2\.manifestUrl.*?=\s*(\S+)/i);
+  if (!startUrl && !manifestUrl) return null;
+  return { startUrl, manifestUrl };
+}
+
+function matchMeta(text, regex) {
+  const m = text.match(regex);
+  if (!m) return null;
+  // Values may be quoted or unquoted
+  return m[1].replace(/^"|"$/g, '');
+}
+
+function launchPackage(adbBin, serial, pkg) {
+  // Use monkey to launch the main LAUNCHER activity of the package
+  const r = spawnSync(adbBin, ['-s', serial, 'shell', 'monkey', '-p', pkg, '-c', 'android.intent.category.LAUNCHER', '1'], { encoding: 'utf8' });
+  return r.status === 0;
+}
+
 function setupCleanup({ devServer, adbBin, serial, port, emulatorProc }) {
   const cleanup = () => {
     console.log('\nCleaning up...');
@@ -299,6 +362,13 @@ function setupCleanup({ devServer, adbBin, serial, port, emulatorProc }) {
   };
   process.on('SIGINT', cleanup);
   process.on('SIGTERM', cleanup);
+  // Auto-terminate this script when the Emulator process exits
+  if (emulatorProc && typeof emulatorProc.once === 'function') {
+    emulatorProc.once('exit', (code) => {
+      console.log(`Emulator process exited with code ${code}`);
+      cleanup();
+    });
+  }
 }
 
 function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
@@ -309,4 +379,13 @@ function printSdkHelp() {
   console.log('  - Ensure SDK components installed: "Android SDK Platform-Tools" and "Android Emulator"');
   console.log('  - Create an AVD in Android Studio (Tools → Device Manager)');
   console.log('  - Command-line tools path (macOS default): ~/Library/Android/sdk');
+}
+
+async function shouldFirstRunPrompt(){
+  // CLI override
+  if (ARGS['first-run'] === 'true' || ARGS['first-run'] === true) return true;
+  if (ARGS['first-run'] === 'false' || ARGS['no-first-run'] === '' || ARGS['no-first-run'] === true) return false;
+  // Interactive prompt (default No = not first run). If Yes, Chrome will open to http://localhost:<PORT>/ so you can Install to Home screen.
+  const ans = await prompt(`First run on this emulator? This will open Chrome to http://localhost:${PORT}/ so you can tap Install and add it to the Home screen. [y/N]: `);
+  return /^y(es)?$/i.test((ans||'').trim());
 }
