@@ -10,8 +10,11 @@
   "scripts": {
     "start": "electron .",
     "dev:web": "node .local/dev-server.js",
-    "shell:dev": "FDAT_SHELL_URL=http://localhost:5173 electron .",
+  "shell:dev": "node .local/shell-dev-auto.js",
+  "shell:dev:reset": "node .local/shell-dev-auto.js --reset",
     "shell:web": "electron .",
+  "shell:web:reset": "electron . --reset",
+  "shell:reset-all": "electron . --reset-all",
     "shell:pack": "electron-builder --dir",
     "shell:dist": "electron-builder -mwl",
     "dev:android_pwa": "node .local/dev-android-pwa.js",

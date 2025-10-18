@@ -317,6 +317,17 @@
   </div>
 </header>
 
+<!-- First-run loading overlay -->
+<div id="firstRunOverlay" style="display:none; position:fixed; inset:0; background:linear-gradient(180deg, #f7faff, #ffffff); z-index:100000; align-items:center; justify-content:center;">
+  <div style="text-align:center; color:#334;">
+    <div class="spinner" style="margin:0 auto 12px; width:44px; height:44px; border:4px solid #cfe0ff; border-top-color:#0b6edb; border-radius:50%; animation:spin 1s linear infinite"></div>
+    <div style="font-weight:600;">Preparing offline support…</div>
+    <div class="small-muted" style="margin-top:6px;">First run only. This may take a few seconds.</div>
+  </div>
+</div>
+<style>
+@keyframes spin { from { transform: rotate(0deg);} to { transform: rotate(360deg);} }
+</style>
 <div id="installBanner" style="display:none; position:sticky; top:0; z-index:10000; background:#0b6edb; color:#fff; padding:8px 12px; border-radius:8px; margin-bottom:10px; box-shadow:0 4px 18px rgba(0,0,0,0.2);">
   <span>Install FDAT for offline use and a full-screen experience.</span>
   <button id="installNow" class="small-btn" style="margin-left:10px; background:#fff; color:#0b6edb;">Install</button>
@@ -748,6 +759,24 @@
 // Register Service Worker for PWA offline + updates
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
+    // Show first-run overlay if SW hasn't taken control yet
+    try {
+      const overlay = document.getElementById('firstRunOverlay');
+      const showOverlay = () => { if (overlay) { overlay.style.display = 'flex'; } };
+      const hideOverlay = () => { if (overlay) { overlay.style.display = 'none'; } };
+      const hasController = !!navigator.serviceWorker.controller;
+      // If no controller, likely first run. Show overlay until SW precache completes or a timeout.
+      if (!hasController) {
+        showOverlay();
+        // Safety timeout in case of network issues (still lets user interact)
+        setTimeout(hideOverlay, 15000);
+        navigator.serviceWorker.addEventListener('controllerchange', hideOverlay);
+        navigator.serviceWorker.addEventListener('message', (evt) => {
+          const data = evt.data || {};
+          if (data && data.type === 'PRECACHE_DONE') hideOverlay();
+        });
+      }
+    } catch (_) {}
     function showUpdateToast(onReload){
       const t = document.createElement('div');
       t.style.position = 'fixed'; t.style.bottom = '16px'; t.style.left = '50%'; t.style.transform = 'translateX(-50%)';

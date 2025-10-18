@@ -33,7 +33,13 @@ self.addEventListener('activate', (event) => {
         return caches.delete(k);
       }
       return Promise.resolve();
-    }))).then(() => self.clients.claim())
+    }))).then(() => self.clients.claim()).then(async () => {
+      // Notify any open pages that offline core is ready (first-run UX)
+      try {
+        const clients = await self.clients.matchAll({ includeUncontrolled: true, type: 'window' });
+        clients.forEach(c => c.postMessage({ type: 'PRECACHE_DONE' }));
+      } catch (_) {}
+    })
   );
 });
 
