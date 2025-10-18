@@ -6,6 +6,8 @@ const https = require('https');
 let mainWindow;
 
 // PWA URL - the online version that auto-updates via service worker
+// This is the single source of truth for the PWA location
+// If the hosting URL changes, update this constant
 const PWA_URL = 'https://rulingants.github.io/fdat/';
 
 function resolveIconPath(){
