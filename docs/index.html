@@ -5126,5 +5126,18 @@ window.addEventListener('beforeunload', syncLegacyToHierarchical);
 // Also sync periodically (every 5 seconds) to catch settings changes
 setInterval(syncLegacyToHierarchical, 5000);
 </script>
+<script>
+  // Open external links in a new browser window (prevents in-app browsing).
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest('a[href]');
+    if (!a) return;
+    const url = new URL(a.getAttribute('href'), location.href);
+    const inScope = url.origin === location.origin && url.pathname.startsWith('/fdat/');
+    if (!inScope) {
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer external';
+    }
+  });
+</script>
 </body>
 </html>

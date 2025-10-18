@@ -10,6 +10,10 @@
   "scripts": {
     "start": "electron .",
     "dev:web": "node .local/dev-server.js",
+    "shell:dev": "FDAT_SHELL_URL=http://localhost:5173 electron .",
+    "shell:web": "electron .",
+    "shell:pack": "electron-builder --dir",
+    "shell:dist": "electron-builder -mwl",
     "dev:android_pwa": "node .local/dev-android-pwa.js",
     "pwa:icons": "node scripts/gen-pwa-icons.mjs",
     "pack": "electron-builder --dir",
@@ -26,18 +30,16 @@
   },
   "license": "AGPL-3.0-only",
   "devDependencies": {
-    "electron": "^38.2.2",
+    "electron": "^30.0.0",
     "electron-builder": "^24.13.3",
-    "sharp": "^0.33.4",
-    "to-ico": "^1.1.5"
+    "sharp": "^0.33.4"
   },
   "build": {
     "appId": "com.rulingants.fdat",
     "productName": "Flex DiscourseChart Analysis Tool (FDAT)",
     "files": [
-      "docs/**/*",
+      "assets/**/*",
       "main.js",
-      "preload.js",
       "package.json"
     ],
     "directories": {
@@ -77,9 +79,5 @@
         "repo": "fdat"
       }
     ]
-  },
-  "dependencies": {
-    "electron-log": "^5.4.3",
-    "electron-updater": "^6.6.2"
   }
 }

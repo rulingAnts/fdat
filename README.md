@@ -54,7 +54,7 @@ When launched from the home screen, FDAT opens in standalone mode (minimal brows
 2. Download the installer (Setup) (.exe). You may also see a “portable” .exe.
 3. Run the installer. If Windows SmartScreen warns (unsigned binary), choose “More info” → “Run anyway.”
 
-The desktop app bundles the same viewer for offline use.
+The desktop app is a browser-shell that loads the online PWA. This ensures you always have the latest version (auto-updated via the PWA's service worker) while providing a native desktop experience. External links automatically open in your default browser.
 
 ## Usage tips
 
@@ -85,8 +85,13 @@ Requirements
 Install and run
 ```bash
 npm install
-npm start
+npm start  # Launches desktop app (loads online PWA)
 ```
+
+**Note**: The desktop app is now a browser-shell that loads the online PWA from https://rulingants.github.io/fdat/. This means:
+- The app always serves the latest PWA version (no bundled docs folder)
+- Auto-updates are handled by the PWA's service worker
+- External links automatically open in your default browser (preventing the app from being used as a general web browser)
 
 Local web dev server (PWA)
 
@@ -142,6 +147,8 @@ npm run dist:mac
 # All platforms (where supported)
 npm run dist:all
 ```
+
+The desktop builds are significantly smaller now since they only include the browser-shell (main.js, preload.js, icons) and load the PWA from the online URL. No electron-updater or bundled web app files are needed.
 
 ## Continuous delivery (optional)
 

@@ -1,10 +1,11 @@
 {
+  "id": "/fdat/",
+  "start_url": "/fdat/",
+  "scope": "/fdat/",
+  "display": "standalone",
   "name": "Flex DiscourseChart Analysis Tool (FDAT)",
   "short_name": "FDAT",
   "description": "Offline-capable Discourse Chart viewer/exporter for FLEx Text Charts.",
-  "start_url": ".",
-  "scope": ".",
-  "display": "standalone",
   "theme_color": "#0b6edb",
   "background_color": "#ffffff",
   "icons": [
