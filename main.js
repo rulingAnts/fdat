@@ -5,6 +5,9 @@ const https = require('https');
 
 let mainWindow;
 
+// PWA URL - the online version that auto-updates via service worker
+const PWA_URL = 'https://rulingants.github.io/fdat/';
+
 function resolveIconPath(){
   const base = path.join(__dirname, 'assets');
   const icns = path.join(base, 'icon.icns');
@@ -35,8 +38,8 @@ function createWindow() {
     }catch(_){ /* non-fatal */ }
   }
   mainWindow = new BrowserWindow({
-    width: 800,
-    height: 600,
+    width: 1024,
+    height: 768,
     icon: (process.platform === 'darwin') ? undefined : iconPath,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -44,7 +47,31 @@ function createWindow() {
     },
   });
 
-  mainWindow.loadFile(path.join(__dirname, 'docs', 'index.html'));
+  // Browser-shell: Load the online PWA instead of local files
+  // This allows the PWA's service worker to handle auto-updates
+  mainWindow.loadURL(PWA_URL);
+
+  // Handle external links - open in default browser instead of within the app
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    // Allow internal navigation within the app's domain
+    if (url.startsWith(PWA_URL)) {
+      return { action: 'allow' };
+    }
+    // Open external links in the default browser
+    shell.openExternal(url);
+    return { action: 'deny' };
+  });
+
+  // Also catch navigation events to ensure external links open externally
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    // Allow navigation within the PWA domain
+    if (url.startsWith(PWA_URL)) {
+      return;
+    }
+    // Prevent navigation and open in external browser
+    event.preventDefault();
+    shell.openExternal(url);
+  });
 
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -53,96 +80,9 @@ function createWindow() {
 
 app.on('ready', createWindow);
 
-// ===== Auto-updater (only in packaged apps) =====
-try{
-  const { autoUpdater } = require('electron-updater');
-  // Use electron-log for updater logs if available
-  try{
-    const log = require('electron-log');
-    autoUpdater.logger = log;
-    if(log && log.transports && log.transports.file){
-      log.transports.file.level = 'info';
-    }
-  }catch(_){ /* optional */ }
-
-  // Simple semver compare without extra deps (returns true if a>b)
-  function isNewerVersion(a, b){
-    const pa = String(a||'').replace(/^v/i,'').split('.').map(n=> parseInt(n,10)||0);
-    const pb = String(b||'').replace(/^v/i,'').split('.').map(n=> parseInt(n,10)||0);
-    const len = Math.max(pa.length, pb.length);
-    for(let i=0;i<len;i++){
-      const x = pa[i]||0, y = pb[i]||0;
-      if(x>y) return true; if(x<y) return false;
-    }
-    return false;
-  }
-
-  function checkPortableUpdate(){
-    // Query GitHub Releases latest (non-prerelease)
-  const owner = 'rulingAnts';
-  const repo = 'fdat';
-    const url = `https://api.github.com/repos/${owner}/${repo}/releases/latest`;
-    const options = { headers: { 'User-Agent': 'flexxml-viewer', 'Accept': 'application/vnd.github+json' } };
-    try{
-      https.get(url, options, (res)=>{
-        let data='';
-        res.on('data', chunk=> data+=chunk);
-        res.on('end', async ()=>{
-          try{
-            if(res.statusCode !== 200) return; // silent on errors
-            const json = JSON.parse(data);
-            const latestTag = (json && (json.tag_name || json.name)) || '';
-            const current = app.getVersion();
-            if(latestTag && isNewerVersion(latestTag, current)){
-              const msg = `A newer version (${latestTag}) is available. Portable builds must be updated manually.`;
-              const r = await dialog.showMessageBox({
-                type: 'info', buttons: ['Open Download Page', 'Later'], defaultId: 0, cancelId: 1,
-                message: 'Update Available', detail: msg
-              });
-              if(r.response === 0){ shell.openExternal(`https://github.com/${owner}/${repo}/releases/latest`); }
-            }
-          }catch(_){/* ignore */}
-        });
-      }).on('error', ()=>{});
-    }catch(_){/* ignore */}
-  }
-  function setupAutoUpdater(){
-    // Guard: only run in packaged app context
-    if(!app.isPackaged) return;
-    // Guard: disable updater for Windows portable builds
-    const isPortableWin = process.platform === 'win32' && !!process.env.PORTABLE_EXECUTABLE_DIR;
-    if(isPortableWin){
-      try{ autoUpdater.logger && autoUpdater.logger.info && autoUpdater.logger.info('Auto-update disabled (Windows portable build detected).'); }catch(_){/* ignore */}
-      // Instead, do a lightweight notify-only check via GitHub API
-      checkPortableUpdate();
-      return;
-    }
-    // macOS/Windows cross-platform: default GitHub provider via electron-builder publish config
-    autoUpdater.autoDownload = true;
-    autoUpdater.on('error', (err)=>{
-      // Non-fatal: log, optional dialog in debug builds
-      // console.error('AutoUpdater error:', err);
-    });
-    autoUpdater.on('update-available', ()=>{
-      // Optionally inform user; we keep silent and download automatically
-    });
-    autoUpdater.on('update-downloaded', async (info)=>{
-      const res = await dialog.showMessageBox({
-        type: 'question',
-        buttons: ['Restart and Update', 'Later'],
-        defaultId: 0,
-        cancelId: 1,
-        message: 'An update has been downloaded.',
-        detail: 'Restart now to apply the update?'
-      });
-      if(res.response === 0){ autoUpdater.quitAndInstall(); }
-    });
-    // Check on startup, then optionally periodically (e.g., every 6 hours)
-    autoUpdater.checkForUpdatesAndNotify().catch(()=>{});
-    // setInterval(()=> autoUpdater.checkForUpdates().catch(()=>{}), 6 * 60 * 60 * 1000);
-  }
-  app.on('ready', setupAutoUpdater);
-}catch(_){ /* electron-updater not installed in dev */ }
+// Note: Auto-updates are handled by the PWA's service worker.
+// The desktop app is now a browser-shell that loads the online PWA,
+// which always serves the latest version via GitHub Pages and service worker caching.
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

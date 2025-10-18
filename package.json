@@ -35,7 +35,7 @@
     "appId": "com.rulingants.fdat",
     "productName": "Flex DiscourseChart Analysis Tool (FDAT)",
     "files": [
-      "docs/**/*",
+      "assets/**/*",
       "main.js",
       "preload.js",
       "package.json"
@@ -77,9 +77,5 @@
         "repo": "fdat"
       }
     ]
-  },
-  "dependencies": {
-    "electron-log": "^5.4.3",
-    "electron-updater": "^6.6.2"
   }
 }
