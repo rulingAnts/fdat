@@ -10,8 +10,8 @@ FDAT is a specialized, client‑side tool for viewing, transforming, styling, an
   
 This project is part of the Field Linguistics Extension Tools (FLET) project: [https://github.com/rulingAnts/flet](https://github.com/rulingAnts/flet)
 
-- Web app: [https://rulingants.github.io/fdat](https://rulingants.github.io/fdat)
-- Latest Windows release: [https://github.com/rulingAnts/fdat/releases/latest](https://github.com/rulingAnts/fdat/releases/latest)
+- Web app (can install to home screen on tablets): [https://rulingants.github.io/fdat](https://rulingants.github.io/fdat)
+- Latest Desktop (Windows/Linux/Mac) release: [https://github.com/rulingAnts/fdat/releases/latest](https://github.com/rulingAnts/fdat/releases/latest)
 
 ## What it does
 

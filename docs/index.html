@@ -317,6 +317,13 @@
   </div>
 </header>
 
+<div id="installBanner" style="display:none; position:sticky; top:0; z-index:10000; background:#0b6edb; color:#fff; padding:8px 12px; border-radius:8px; margin-bottom:10px; box-shadow:0 4px 18px rgba(0,0,0,0.2);">
+  <span>Install FDAT for offline use and a full-screen experience.</span>
+  <button id="installNow" class="small-btn" style="margin-left:10px; background:#fff; color:#0b6edb;">Install</button>
+  <button id="installDismiss" class="small-btn secondary" style="margin-left:6px; background:rgba(255,255,255,0.15); color:#fff;">Not now</button>
+  <span class="small-muted" style="margin-left:10px; opacity:0.9">You can install later from your browser menu.</span>
+  </div>
+
   <section id="aboutPanel" class="prologue-panel" aria-live="polite" data-collapsed="0" data-no-persist="1" style="background:#eef5ff;border:1px solid #c8dbff;padding:0;border-radius:8px;margin-bottom:12px">
     <div class="collapsible-header" id="aboutHeader" style="padding:10px 14px">
       <span class="small-muted">About FLEx DiscourseChart Analysis Tool</span>
@@ -782,6 +789,9 @@ if ('serviceWorker' in navigator) {
 // ===== PWA Install (tablet-only if possible) =====
 (function(){
   const installBtn = document.getElementById('pwaInstallBtn');
+  const banner = document.getElementById('installBanner');
+  const installNow = document.getElementById('installNow');
+  const installDismiss = document.getElementById('installDismiss');
   let deferredPrompt = null;
 
   function isStandalone(){
@@ -820,9 +830,10 @@ if ('serviceWorker' in navigator) {
     // Android/Chromium: intercept and show our button when tablet heuristics pass
     e.preventDefault();
     deferredPrompt = e;
-    if(!isStandalone() && isTablet() && isAndroid()){
-      if(installBtn){ installBtn.style.display='inline-flex'; }
-    }
+    const dismissed = localStorage.getItem('fdat_install_banner_dismissed') === '1';
+    const shouldShow = !isStandalone() && isTablet() && isAndroid() && !dismissed;
+    if(installBtn){ installBtn.style.display = shouldShow ? 'inline-flex' : 'none'; }
+    if(banner){ banner.style.display = shouldShow ? 'block' : 'none'; }
   });
 
   if(installBtn){
@@ -831,6 +842,22 @@ if ('serviceWorker' in navigator) {
       deferredPrompt.prompt();
       try{ await deferredPrompt.userChoice; }catch(_){/* ignore */}
       deferredPrompt = null; installBtn.style.display='none';
+      if(banner) banner.style.display='none';
+    });
+  }
+
+  if(installNow){
+    installNow.addEventListener('click', async ()=>{
+      if(!deferredPrompt) return;
+      deferredPrompt.prompt();
+      try{ await deferredPrompt.userChoice; }catch(_){/* ignore */}
+      deferredPrompt = null; if(installBtn) installBtn.style.display='none'; if(banner) banner.style.display='none';
+    });
+  }
+  if(installDismiss){
+    installDismiss.addEventListener('click', ()=>{
+      localStorage.setItem('fdat_install_banner_dismissed','1');
+      if(banner) banner.style.display='none';
     });
   }
 

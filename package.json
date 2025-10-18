@@ -11,6 +11,7 @@
     "start": "electron .",
     "dev:web": "node .local/dev-server.js",
     "dev:android_pwa": "node .local/dev-android-pwa.js",
+    "pwa:icons": "node scripts/gen-pwa-icons.mjs",
     "pack": "electron-builder --dir",
     "dist": "electron-builder",
     "dist:win": "electron-builder --win nsis",
@@ -26,7 +27,9 @@
   "license": "AGPL-3.0-only",
   "devDependencies": {
     "electron": "^38.2.2",
-    "electron-builder": "^24.13.3"
+    "electron-builder": "^24.13.3",
+    "sharp": "^0.33.4",
+    "to-ico": "^1.1.5"
   },
   "build": {
     "appId": "com.rulingants.fdat",
