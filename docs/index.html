@@ -195,6 +195,11 @@
   .note-tooltip :where(p){margin:0.4em 0}
   .note-tooltip a{color:#9ecbff}
   .note-tooltip .arrow{position:absolute;width:10px;height:10px;background:#111;transform:rotate(45deg)}
+  /* Custom columns in-app editing styles */
+  .cc-cell{ background:#fff; }
+  .cc-header{ font-weight:600; color:#374151; }
+  .cc-edit{ min-height: 1.5em; padding: 4px 6px; border:1px dashed #e5e7eb; border-radius:6px; outline:none }
+  .cc-edit:focus{ border-color:#cfe0ff; background:#f7faff }
   /* Print-friendly adjustments */
 @media print {
   /* Page margins */
@@ -675,6 +680,27 @@
   </div>
 
   <!-- Free translations options -->
+  <!-- Custom Columns -->
+  <div id="customColsPanel" class="prologue-panel" aria-live="polite" data-collapsed="1" style="margin-left:12px; display:none">
+    <div class="collapsible-header" id="customColsHeader">
+      <span class="small-muted">Custom columns (appear after row number)</span>
+      <span class="chev">▸</span>
+    </div>
+    <div class="collapsible-body">
+      <div class="prologue-grid">
+        <div class="full small-muted" style="margin-bottom:8px">Add text columns that appear immediately to the right of the row number. Values are per row and saved locally.</div>
+        <div class="full" id="ccControls">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+            <button id="ccAdd" class="small-btn">Add column</button>
+            <button id="ccShowAll" class="small-btn secondary">Show all</button>
+            <button id="ccHideAll" class="small-btn secondary">Hide all</button>
+          </div>
+          <div id="ccList" class="small-muted"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div id="ftPanel" class="prologue-panel" aria-live="polite" data-collapsed="1" style="margin-left:12px">
     <div class="collapsible-header" id="ftHeader">
       <span class="small-muted">Free translations</span>
@@ -955,6 +981,7 @@ const ABBREV_PREFS_KEY = 'flex_textchart_abbrevs_v1';
 const LISTREF_PREFS_KEY = 'flex_textchart_listrefs_v2';
 const FT_PREFS_KEY = 'flex_textchart_free_trans_prefs_v1';
 const SALIENCE_PREFS_KEY = 'flex_textchart_salience_bands_v1';
+const CUSTOM_COLS_PREFS_KEY = 'flex_textchart_custom_cols_v1';
 const ROW_GUIDS_KEY = 'flex_textchart_row_guids_v1';
 const TOKEN_GUIDS_KEY = 'flex_textchart_token_guids_v1';
 const NOTE_GUIDS_KEY = 'flex_textchart_note_guids_v1';
@@ -1200,6 +1227,7 @@ function ensureDocument(genre, documentId){
       rowGuids: { byIdx: {}, byLabel: {} },
       tokenGuids: { byKey: {} },
       noteGuids: { byRowGuid: {} },
+      customColumns: { cols: [], cells: {} },
       beforeHtml: null,
       beforeHtmlName: '',
       afterHtml: null,
@@ -1268,6 +1296,7 @@ function refreshAllSettingsFromContext(){
         if(doc.rowGuids) saveJSON(ROW_GUIDS_KEY, doc.rowGuids);
         if(doc.tokenGuids) saveJSON(TOKEN_GUIDS_KEY, doc.tokenGuids);
         if(doc.noteGuids) saveJSON(NOTE_GUIDS_KEY, doc.noteGuids);
+        if(doc.customColumns) saveJSON(CUSTOM_COLS_PREFS_KEY, doc.customColumns);
       }
     }
   }
@@ -1331,6 +1360,8 @@ function syncLegacyToHierarchical(){
       
       const noteGuids = loadJSON(NOTE_GUIDS_KEY);
       if(noteGuids) doc.noteGuids = noteGuids;
+      const customCols = loadJSON(CUSTOM_COLS_PREFS_KEY);
+      if(customCols) doc.customColumns = customCols;
     }
   }
   
@@ -1401,6 +1432,8 @@ function migrateToHierarchical(){
   
   const noteGuids = loadJSON(NOTE_GUIDS_KEY);
   if(noteGuids) doc.noteGuids = noteGuids;
+  const customCols = loadJSON(CUSTOM_COLS_PREFS_KEY);
+  if(customCols) doc.customColumns = customCols;
   
   // App-level settings
   const printHeaders = loadJSON(PRINT_HEADERS_KEY);
@@ -1516,6 +1549,7 @@ function collectAllSettings(){
     LISTREF_PREFS_KEY,
     FT_PREFS_KEY,
     SALIENCE_PREFS_KEY,
+    CUSTOM_COLS_PREFS_KEY,
     NOTES_PREFS_KEY,
     ROW_GUIDS_KEY,
     TOKEN_GUIDS_KEY,
@@ -2589,6 +2623,10 @@ async function renderDocument(xmlDoc){
   initSalienceControls();
   // Salience display settings panel
   wireCollapsible('salienceDisplayPanel','salienceDisplayHeader');
+    // Show Custom Columns panel
+    showCustomColsPanel(true);
+    wireCollapsible('customColsPanel','customColsHeader');
+    if(!byId('customColsPanel').dataset.wired){ initCustomColsControls(); byId('customColsPanel').dataset.wired = '1'; }
     // Scan listRef abbreviations and show Abbrev controls
     globalState.chartAbbrevLabels = collectListRefLabelsFromXml(xmlDoc);
     showAbbrevPanel(true);
@@ -2621,6 +2659,11 @@ async function renderDocument(xmlDoc){
   wireSalienceButtons(area);
   applySalienceBandsToArea(area);
   toggleSalienceColumn();
+    // Custom columns panel and application
+    showCustomColsPanel(true);
+    wireCollapsible('customColsPanel','customColsHeader');
+    if(!byId('customColsPanel').dataset.wired){ initCustomColsControls(); byId('customColsPanel').dataset.wired = '1'; }
+    applyCustomColumnsToArea(area);
       // Apply freeze headers if saved and show control
       const fhc = byId('freezeHeadersContainer'); if(fhc) fhc.style.display = 'flex';
       initFreezeHeadersControl();
@@ -2681,6 +2724,7 @@ async function renderDocument(xmlDoc){
   if(tag === 'phonology'){
     showProloguePanel(false);
     showAbbrevPanel(false);
+    showCustomColsPanel(false);
     area.appendChild(renderPhonologyView(xmlDoc));
     return;
   }
@@ -2692,11 +2736,13 @@ async function renderDocument(xmlDoc){
     if(langSet.size > 1){
       showProloguePanel(false);
       showAbbrevPanel(false);
+      showCustomColsPanel(false);
       area.appendChild(renderTranslatedListView(root, Array.from(langSet)));
       return;
     } else {
       showProloguePanel(false);
       showAbbrevPanel(false);
+      showCustomColsPanel(false);
       area.appendChild(renderListView(root));
       return;
     }
@@ -2707,6 +2753,7 @@ async function renderDocument(xmlDoc){
   if(wfNodes && wfNodes.length > 0){
     showProloguePanel(false);
     showAbbrevPanel(false);
+    showCustomColsPanel(false);
     area.appendChild(renderWordformsView(xmlDoc));
     return;
   }
@@ -2715,6 +2762,7 @@ async function renderDocument(xmlDoc){
   showProloguePanel(false);
   showAbbrevPanel(false);
   showAppendHtmlPanel(false);
+  showCustomColsPanel(false);
   area.appendChild(renderGenericView(root));
   // Hide print-headers toggle for non-TextChart views
   const rhc = byId('repeatHeadersContainer');
@@ -2765,6 +2813,8 @@ function refreshSalienceVisuals(area){
     updateSalienceButtons(area);
     // Rebuild the legend
     renderSalienceLegend();
+    // Re-apply custom columns in case salience column visibility changed
+    applyCustomColumnsToArea(area);
   }catch(_){ /* non-fatal */ }
 }
 function alphaColor(hex, a){
@@ -2822,6 +2872,120 @@ function updateSalienceColumnCells(tbl){
     td.innerHTML = `<span class="sal-pill">${meta.num}</span> ${escapeHtml(meta.label)}`;
     td.style.background = prefs.enabled ? alphaColor(meta.color, prefs.opacity) : '';
   });
+}
+
+/* ===== Custom columns (user-defined, per-row text) ===== */
+function loadCustomColsPrefs(){ const d = loadJSON(CUSTOM_COLS_PREFS_KEY) || {}; return { cols: Array.isArray(d.cols)?d.cols:[], cells: d.cells || {} }; }
+function saveCustomColsPrefs(p){ saveJSON(CUSTOM_COLS_PREFS_KEY, p); syncLegacyToHierarchical(); }
+function initCustomColsControls(){
+  const addBtn = byId('ccAdd'); const listHost = byId('ccList'); const showAll = byId('ccShowAll'); const hideAll = byId('ccHideAll');
+  if(!addBtn || !listHost) return;
+  function render(){
+    const prefs = loadCustomColsPrefs();
+    const cols = prefs.cols || [];
+    listHost.innerHTML = '';
+    if(!cols.length){ listHost.innerHTML = '<div class="small-muted">No custom columns. Click "Add column".</div>'; return; }
+    cols.forEach((col, idx)=>{
+      const row = document.createElement('div'); row.className='lr-row'; row.style.gridTemplateColumns = 'auto auto 1fr auto auto';
+      const visible = document.createElement('label'); visible.className='small-muted';
+      const cb = document.createElement('input'); cb.type='checkbox'; cb.checked = col.visible !== false; visible.appendChild(cb); visible.appendChild(document.createTextNode(' show'));
+      const lab = document.createElement('input'); lab.type='text'; lab.value = col.label || ('Column ' + (idx+1)); lab.placeholder='Column title'; lab.style.minWidth='0';
+      const up = document.createElement('button'); up.className='small-btn secondary'; up.textContent='▲'; up.title='Move up';
+      const down = document.createElement('button'); down.className='small-btn secondary'; down.textContent='▼'; down.title='Move down';
+      const del = document.createElement('button'); del.className='small-btn secondary'; del.textContent='Remove'; del.title='Remove column';
+      row.appendChild(visible); row.appendChild(document.createTextNode('')); row.appendChild(lab); row.appendChild(up); row.appendChild(down); row.appendChild(del);
+      listHost.appendChild(row);
+      cb.addEventListener('change', ()=>{ const p=loadCustomColsPrefs(); (p.cols||[])[idx].visible = !!cb.checked; saveCustomColsPrefs(p); applyCustomColumnsToArea(); });
+      lab.addEventListener('change', ()=>{ const p=loadCustomColsPrefs(); (p.cols||[])[idx].label = lab.value.trim() || ('Column ' + (idx+1)); saveCustomColsPrefs(p); applyCustomColumnsToArea(); render(); });
+      up.addEventListener('click', ()=>{ const p=loadCustomColsPrefs(); if(idx>0){ const t=p.cols[idx]; p.cols[idx]=p.cols[idx-1]; p.cols[idx-1]=t; saveCustomColsPrefs(p); applyCustomColumnsToArea(); render(); } });
+      down.addEventListener('click', ()=>{ const p=loadCustomColsPrefs(); if(idx<p.cols.length-1){ const t=p.cols[idx]; p.cols[idx]=p.cols[idx+1]; p.cols[idx+1]=t; saveCustomColsPrefs(p); applyCustomColumnsToArea(); render(); } });
+      del.addEventListener('click', ()=>{ if(!confirm('Remove this column?')) return; const p=loadCustomColsPrefs(); const removed = p.cols.splice(idx,1)[0]; if(removed && removed.id){ Object.keys(p.cells||{}).forEach(r=>{ if(p.cells[r] && p.cells[r][removed.id] !== undefined) delete p.cells[r][removed.id]; }); } saveCustomColsPrefs(p); applyCustomColumnsToArea(); render(); });
+    });
+  }
+  addBtn.addEventListener('click', ()=>{
+    const p = loadCustomColsPrefs(); p.cols = p.cols || []; p.cols.push({ id: 'cc_'+Date.now().toString(36)+'_'+Math.floor(Math.random()*1000), label: 'Column '+(p.cols.length+1), visible: true }); saveCustomColsPrefs(p); applyCustomColumnsToArea(); render();
+  });
+  showAll?.addEventListener('click', ()=>{ const p=loadCustomColsPrefs(); (p.cols||[]).forEach(c=> c.visible = true); saveCustomColsPrefs(p); applyCustomColumnsToArea(); render(); });
+  hideAll?.addEventListener('click', ()=>{ const p=loadCustomColsPrefs(); (p.cols||[]).forEach(c=> c.visible = false); saveCustomColsPrefs(p); applyCustomColumnsToArea(); render(); });
+  render();
+}
+function getRownumColumnIndex(tbl){
+  try{
+    const row = Array.from(tbl.querySelectorAll('tbody tr')).find(tr=> !tr.classList.contains('title1') && !tr.classList.contains('title2') && !tr.classList.contains('ft-inline'));
+    if(!row) return 0;
+    let idx = 0; let foundIdx = 0;
+    Array.from(row.children).some(td=>{
+      const span = Number(td.getAttribute('colspan')||'1');
+      const isRownumCell = !!td.querySelector('.interlinear .pair .w.rownum');
+      if(isRownumCell){ foundIdx = idx; return true; }
+      idx += span; return false;
+    });
+    return foundIdx;
+  }catch(_){ return 0; }
+}
+function removeCustomColumns(tbl){ tbl.querySelectorAll('[data-cc-col="1"]').forEach(n=> n.remove()); }
+function applyCustomColumnsToArea(area){
+  area = area || byId('renderArea'); if(!area) return;
+  const tbl = area.querySelector('table.chartshell'); if(!tbl) return;
+  expandColgroupsToIndividualCols(tbl);
+  // Remove existing resize handles; will re-add after columns update
+  try{ tbl.querySelectorAll('.col-resizer').forEach(h=> h.remove()); }catch(_){ }
+  removeCustomColumns(tbl);
+  const prefs = loadCustomColsPrefs(); const defs = (prefs.cols||[]).filter(c=> c.visible !== false);
+  if(!defs.length) return;
+  const baseIdx = getRownumColumnIndex(tbl);
+  // Insert new <col> after rownum index for all colgroups
+  const groups = Array.from(tbl.querySelectorAll('colgroup'));
+  groups.forEach(g=>{
+    const cols = Array.from(g.querySelectorAll('col'));
+    // Insert in reverse order to maintain final order
+    for(let i=defs.length-1;i>=0;i--){
+      const c = document.createElement('col'); c.setAttribute('data-cc-col','1');
+      const ref = cols[baseIdx+1] || null; // after rownum cell
+      if(ref){ g.insertBefore(c, ref); } else { g.appendChild(c); }
+    }
+  });
+  // Insert header cells in title rows at the matching position
+  const headRows = tbl.querySelectorAll('thead tr.row.title1, thead tr.row.title2');
+  headRows.forEach(r=>{
+    // Find the cell covering baseIdx (row number)
+    let ci=0; let cellIdx=0; let coverCell=null;
+    const cells = Array.from(r.children);
+    for(let i=0;i<cells.length;i++){
+      const sp = Number(cells[i].getAttribute('colspan')||'1');
+      const covers = (baseIdx >= ci) && (baseIdx < ci+sp);
+      if(covers){ coverCell = cells[i]; cellIdx = i; break; }
+      ci += sp;
+    }
+    const insertAfter = coverCell || cells[0] || null;
+    const insParent = r;
+    for(let j=defs.length-1;j>=0;j--){ const d = defs[j];
+      const th = document.createElement('th'); th.className='cell cc-header'; th.textContent = d.label || ('Column'); th.setAttribute('data-cc-col','1');
+      if(insertAfter && insertAfter.nextSibling){ insParent.insertBefore(th, insertAfter.nextSibling); }
+      else if(insertAfter){ insParent.appendChild(th); }
+      else { insParent.appendChild(th); }
+    }
+  });
+  // Insert body cells per row after the row number cell
+  const bodyRows = Array.from(tbl.querySelectorAll('tbody tr')).filter(r=> !r.classList.contains('title1') && !r.classList.contains('title2') && !r.classList.contains('ft-inline'));
+  bodyRows.forEach(r=>{
+    const rowGuid = getRowGuidFromTr(r);
+    const rownumCell = Array.from(r.children).find(td=> !!td.querySelector('.interlinear .pair .w.rownum')) || r.querySelector('td');
+    for(let k=defs.length-1;k>=0;k--){ const d = defs[k];
+      const td = document.createElement('td'); td.className='cc-cell'; td.setAttribute('data-cc-col','1');
+      const div = document.createElement('div'); div.className='cc-edit'; div.contentEditable = 'true'; div.setAttribute('data-cc-id', d.id);
+      div.textContent = ((prefs.cells||{})[rowGuid]||{})[d.id] || '';
+      div.addEventListener('input', ()=>{
+        const p = loadCustomColsPrefs(); p.cells = p.cells || {}; p.cells[rowGuid] = p.cells[rowGuid] || {}; p.cells[rowGuid][d.id] = div.textContent; saveCustomColsPrefs(p);
+      });
+      td.appendChild(div);
+      if(rownumCell && rownumCell.nextSibling){ r.insertBefore(td, rownumCell.nextSibling); }
+      else if(rownumCell){ r.appendChild(td); }
+      else { r.appendChild(td); }
+    }
+  });
+  // Re-wire resizers now that columns changed
+  addResizeHandles(tbl);
 }
 
 /* ===== Text Chart detection and rendering (XSLT) ===== */
@@ -3609,6 +3773,8 @@ function buildStandaloneHTML(opts){
   const clone = render.cloneNode(true);
   // Remove in-app only controls from export snapshot
   try{ clone.querySelectorAll('.add-trans-btn, .add-band-btn').forEach(n=> n.remove()); }catch(e){ console.error('Error removing in-app buttons:', e); }
+  // Ensure any editable regions are exported as static text
+  try{ clone.querySelectorAll('[contenteditable]').forEach(n=> n.removeAttribute('contenteditable')); }catch(_){ }
   // Remove interactive wiring attributes if any and re-render legend based on saved prefs post-prologue in export clone (legend already present in clone if rendered)
   // Helper: ensure destination table has individual <col> elements (no span)
   function ensureIndividualCols(tbl){
@@ -4372,6 +4538,7 @@ function applyFreeTranslationsToArea(area){
 function loadNotesPrefs(){ const d = loadJSON(NOTES_PREFS_KEY) || {}; return { mode: d.mode || 'inline', width: d.width || '' }; }
 function saveNotesPrefs(p){ saveJSON(NOTES_PREFS_KEY, p); }
 function showNotesPanel(show){ const p = byId('notesPanel'); if(p) p.style.display = show ? 'block' : 'none'; }
+function showCustomColsPanel(show){ const p = byId('customColsPanel'); if(p) p.style.display = show ? 'block' : 'none'; }
 function initNotesControls(){
   const modeSel = byId('notesMode'); const widthIn = byId('notesWidth'); const resetBtn = byId('notesReset');
   if(!modeSel || !widthIn) return;

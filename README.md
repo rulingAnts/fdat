@@ -113,6 +113,8 @@ Notes
 
 Android Emulator PWA test
 
+[Quick reference: NPM scripts cheat sheet → SCRIPTS.md](./SCRIPTS.md)
+
 ```bash
 # One command: boots an emulator, sets adb reverse, and opens Chrome to the app
 npm run dev:android_pwa
