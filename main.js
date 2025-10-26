@@ -53,6 +53,17 @@ function createWindow() {
         return { action: 'deny' };
       }
     } catch (_) { /* ignore parse errors */ }
+    
+    // Allow data URLs for export functionality
+    if (url.startsWith('data:text/html')) {
+      return { action: 'allow' };
+    }
+    
+    // Allow empty URLs for creating blank windows (export functionality)
+    if (url === '' || url === 'about:blank') {
+      return { action: 'allow' };
+    }
+    
     if (isAllowed(url)) return { action: 'allow' };
     shell.openExternal(url);
     return { action: 'deny' };

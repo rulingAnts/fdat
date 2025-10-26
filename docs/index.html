@@ -1495,7 +1495,10 @@ byId('transformBtn').addEventListener('click', async ()=> {
 byId('exportChartBtn').addEventListener('click', ()=>{
   const html = buildStandaloneHTML({ includeToolbar: true });
   const w = window.open('', '_blank');
-  if(!w) return;
+  if(!w) {
+    alert('Export window blocked. Please allow popups for this app.');
+    return;
+  }
   w.document.write(html);
   w.document.close();
 });
