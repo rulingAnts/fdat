@@ -29,7 +29,7 @@
     "dist": "electron-builder",
   "dist:linux": "electron-builder --linux",
   "dist:linux:all": "electron-builder --linux AppImage",
-    "dist:win": "electron-builder --win nsis",
+    "dist:win": "electron-builder --win portable",
     "dist:win:portable": "electron-builder --win portable",
     "dist:win:all": "electron-builder --win nsis portable",
     "dist:mac": "electron-builder --mac",
@@ -79,7 +79,6 @@
     },
     "win": {
       "target": [
-        { "target": "nsis", "arch": ["x64"], "artifactName": "${productName}-${version}-win-${arch}-setup.${ext}" },
         { "target": "portable", "arch": ["x64"], "artifactName": "${productName}-${version}-win-${arch}-portable.${ext}" }
       ],
       "icon": "assets/icon.ico"
