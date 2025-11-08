@@ -22,13 +22,20 @@
     "shell:dist": "electron-builder -mwl",
     "dev:android_pwa": "node .local/dev-android-pwa.js",
     "pwa:icons": "node scripts/gen-pwa-icons.mjs",
+  "clean:dist:mac": "rm -rf dist/mac* dist/*-mac-*.dmg dist/*-mac-*.zip dist/latest-mac*.yml",
+  "clean:dist:linux": "rm -rf dist/linux* dist/*-linux-*.AppImage dist/*-linux-*.tar.* dist/latest-linux*.yml",
+  "clean:dist:all": "rm -rf dist",
     "pack": "electron-builder --dir",
     "dist": "electron-builder",
+  "dist:linux": "electron-builder --linux",
+  "dist:linux:all": "electron-builder --linux AppImage",
     "dist:win": "electron-builder --win nsis",
     "dist:win:portable": "electron-builder --win portable",
     "dist:win:all": "electron-builder --win nsis portable",
-    "dist:mac": "electron-builder --mac dmg",
-    "dist:all": "electron-builder -mwl"
+    "dist:mac": "electron-builder --mac",
+    "dist:all": "electron-builder -mwl",
+    "dist:checksums": "node scripts/gen-checksums.mjs",
+    "dist:all+checksums": "npm run dist:all && npm run dist:checksums"
   },
   "author": "",
   "engines": {
@@ -53,23 +60,41 @@
     },
     "mac": {
       "target": [
-        "dmg",
-        "zip"
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "universal"
+          ]
+        }
       ],
+      "artifactName": "${productName}-${version}-mac-universal.${ext}",
       "icon": "assets/icon.icns",
       "category": "public.app-category.productivity"
     },
     "win": {
       "target": [
-        "nsis",
-        "portable"
+        { "target": "nsis", "arch": ["x64"], "artifactName": "${productName}-${version}-win-${arch}-setup.${ext}" },
+        { "target": "portable", "arch": ["x64"], "artifactName": "${productName}-${version}-win-${arch}-portable.${ext}" }
       ],
       "icon": "assets/icon.ico"
     },
     "linux": {
       "target": [
-        "AppImage"
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
       ],
+      "artifactName": "${productName}-${version}-linux-${arch}.${ext}",
       "category": "Utility"
     },
     "nsis": {

@@ -196,9 +196,9 @@
   .note-tooltip a{color:#9ecbff}
   .note-tooltip .arrow{position:absolute;width:10px;height:10px;background:#111;transform:rotate(45deg)}
   /* Custom columns in-app editing styles */
-  .cc-cell{ background:#fff; }
-  .cc-header{ font-weight:600; color:#374151; }
-  .cc-edit{ min-height: 1.5em; padding: 4px 6px; border:1px dashed #e5e7eb; border-radius:6px; outline:none }
+  .cc-cell{ background:#fff; min-width: 80px; }
+  .cc-header{ font-weight:600; color:#374151; min-width: 80px; }
+  .cc-edit{ min-height: 1.5em; min-width: 70px; padding: 4px 6px; border:1px dashed #e5e7eb; border-radius:6px; outline:none; word-wrap: break-word; }
   .cc-edit:focus{ border-color:#cfe0ff; background:#f7faff }
   /* Print-friendly adjustments */
 @media print {
@@ -3810,7 +3810,15 @@ function buildStandaloneHTML(opts){
     if(srcHeader){
       srcHeader.querySelectorAll('th.cell').forEach(th=>{
         const span = Number(th.getAttribute('colspan')||'1');
-        const w = Math.max(0, Math.round(th.getBoundingClientRect().width));
+        let w = Math.max(0, Math.round(th.getBoundingClientRect().width));
+        
+        // Special handling for custom columns - ensure minimum width
+        if(th.classList.contains('cc-header')) {
+          const textContent = th.textContent || '';
+          const minTextWidth = Math.max(80, textContent.length * 8); // Estimate based on text length
+          w = Math.max(w, minTextWidth);
+        }
+        
         const per = Math.max(0, Math.floor(w / span));
         for(let i=0;i<span && (colIndex + i) < widths.length;i++){
           widths[colIndex + i] = per;
@@ -3823,7 +3831,18 @@ function buildStandaloneHTML(opts){
       let idx = 0;
       Array.from(row.children).forEach(td=>{
         const span = Number(td.getAttribute('colspan')||'1');
-        const w = Math.max(0, Math.round(td.getBoundingClientRect().width));
+        let w = Math.max(0, Math.round(td.getBoundingClientRect().width));
+        
+        // Special handling for custom column cells - measure content
+        if(td.classList.contains('cc-cell')) {
+          const editDiv = td.querySelector('.cc-edit');
+          if(editDiv) {
+            const textContent = editDiv.textContent || '';
+            const minTextWidth = Math.max(80, textContent.length * 8); // Estimate based on text length
+            w = Math.max(w, minTextWidth);
+          }
+        }
+        
         const per = Math.max(0, Math.floor(w / span));
         for(let i=0;i<span && (idx + i) < widths.length;i++){
           if(widths[idx + i] === 0) widths[idx + i] = per;
@@ -3837,10 +3856,26 @@ function buildStandaloneHTML(opts){
         if(!widths.some(v=>v===0)) break;
       }
     }
-    // Apply a floor and assign to destination <col> style.width
+    // Apply a floor and assign to destination <col> style.width, with higher minimum for custom columns
     for(let i=0;i<widths.length;i++){
-      const px = Math.max(40, widths[i] || 0);
-      if(dstCols[i]) dstCols[i].style.width = px + 'px';
+      const col = dstCols[i];
+      if(!col) continue;
+      
+      // Check if this is a custom column by looking at corresponding header
+      let isCustomCol = false;
+      try {
+        const headerRow = dstTbl.querySelector('tr.row.title2') || dstTbl.querySelector('tr.row.title1');
+        if(headerRow) {
+          const headers = Array.from(headerRow.querySelectorAll('th.cell'));
+          if(headers[i] && headers[i].classList.contains('cc-header')) {
+            isCustomCol = true;
+          }
+        }
+      } catch(_) {}
+      
+      const minWidth = isCustomCol ? 80 : 40; // Custom columns get higher minimum
+      const px = Math.max(minWidth, widths[i] || 0);
+      col.style.width = px + 'px';
     }
     // Enforce fixed layout so widths render consistently in the export
     dstTbl.style.tableLayout = 'fixed';
@@ -3932,6 +3967,10 @@ function buildStandaloneHTML(opts){
   .chartshell.freeze-headers thead tr.row.title1 th{top:var(--tc-sticky-top-1,0px)}
   .chartshell.freeze-headers thead tr.row.title2 th{top:var(--tc-sticky-top-2,32px);z-index:4}
   .chartshell-sticky-spacer{height:var(--tc-sticky-spacer,0px)}
+  /* Custom columns export styling */
+  .cc-cell{ min-width: 80px; word-wrap: break-word; }
+  .cc-header{ min-width: 80px; }
+  .cc-edit{ min-width: 70px; padding: 4px 6px; word-wrap: break-word; border: 1px solid #e5e7eb; border-radius: 6px; }
   `;
   // Optional export toolbar markup
   const exportToolbar = opts.includeToolbar ? (

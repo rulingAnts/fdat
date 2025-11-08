@@ -72,8 +72,16 @@ Tip: On macOS with zsh, you can run any of these with `npm run <script>` (or `np
   - Use when: You want both Windows formats at once.
 
 - dist:mac
-  - What: macOS DMG via `electron-builder --mac dmg`.
-  - Use when: Building a macOS installer.
+  - What: macOS DMG and ZIP (universal) via `electron-builder --mac`.
+  - Use when: Building macOS installers (single universal download).
+
+- dist:linux
+  - What: Linux AppImage builds via `electron-builder --linux` (x64 and arm64 per config).
+  - Use when: Building Linux AppImage artifacts.
+
+- dist:linux:all
+  - What: Alias for Linux AppImage builds (targets from config).
+  - Use when: Same as `dist:linux`.
 
 - dist:all
   - What: All platforms (macOS, Windows, Linux) via `electron-builder -mwl`.
@@ -84,6 +92,17 @@ Tip: On macOS with zsh, you can run any of these with `npm run <script>` (or `np
   - Use when: Prefer `pack` / `dist` for primary usage; these remain available for continuity.
 
 ## Utilities
+- clean:dist:mac
+  - What: Removes prior mac artifacts (old arch-specific DMGs/Zips and `latest-mac*.yml`).
+  - Use when: Switching to universal mac builds or to avoid confusion with stale outputs.
+
+- clean:dist:linux
+  - What: Removes prior Linux artifacts (AppImages, tar archives, and `latest-linux*.yml` if present).
+  - Use when: Cleaning before a fresh Linux build.
+
+- clean:dist:all
+  - What: Removes the entire `dist/` folder.
+  - Use when: You want a completely clean slate before building.
 
 - pwa:icons
   - What: Generates PWA icons (`scripts/gen-pwa-icons.mjs`).
