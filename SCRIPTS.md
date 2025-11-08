@@ -91,6 +91,14 @@ Tip: On macOS with zsh, you can run any of these with `npm run <script>` (or `np
   - What: Aliases to `electron-builder --dir` and `electron-builder -mwl` respectively (legacy naming).
   - Use when: Prefer `pack` / `dist` for primary usage; these remain available for continuity.
 
+- dist:checksums
+  - What: Generates SHA256 checksum files for every artifact in `dist/` plus an aggregate `checksums.txt`.
+  - Use when: Publishing releases and you want verifiable integrity.
+
+- dist:all+checksums
+  - What: Runs `dist:all` then `dist:checksums`.
+  - Use when: One-step full multi-platform build plus checksum generation.
+
 ## Utilities
 - clean:dist:mac
   - What: Removes prior mac artifacts (old arch-specific DMGs/Zips and `latest-mac*.yml`).
@@ -103,6 +111,22 @@ Tip: On macOS with zsh, you can run any of these with `npm run <script>` (or `np
 - clean:dist:all
   - What: Removes the entire `dist/` folder.
   - Use when: You want a completely clean slate before building.
+
+## Artifact naming notes
+
+- macOS: Universal artifacts named `${productName}-${version}-mac-universal.(dmg|zip)`.
+- Linux: AppImage per arch `${productName}-${version}-linux-${arch}.AppImage` (x64, arm64).
+- Windows: Names use `${productName}-${version}-win-${arch}-${target}.(exe|zip)`; targets are `nsis` (installer) and `portable`.
+
+## Integrity verification
+
+After running `npm run dist:checksums` (or `dist:all+checksums`), verify a file:
+
+```
+shasum -a 256 "Flex DiscourseChart Analysis Tool (FDAT)-3.0.0-mac-universal.dmg" | diff - dist/Flex\ DiscourseChart\ Analysis\ Tool\ \(FDAT\)-3.0.0-mac-universal.dmg.sha256
+```
+
+Or compare against `checksums.txt`.
 
 - pwa:icons
   - What: Generates PWA icons (`scripts/gen-pwa-icons.mjs`).
