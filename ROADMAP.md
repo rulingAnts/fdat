@@ -11,6 +11,11 @@ Priority ordering (top = higher priority):
 
 ---
 
+## Migration to PyWebView technology Stack:
+1. Open button doesn't detect DiscourseChart accurately
+2. Other export buttons open new windows with code instead of saving files
+
+
 ## 1) Custom fields (columns, chips, overlays)
 
 Goal
