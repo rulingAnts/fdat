@@ -930,8 +930,110 @@ let globalState = {
   postlogueAuto: true
 };
 
-function saveJSON(key, obj){ try{ localStorage.setItem(key, JSON.stringify(obj)); } catch(e){} }
-function loadJSON(key){ try{ const s = localStorage.getItem(key); return s ? JSON.parse(s) : null; } catch(e){ return null; } }
+// Settings storage - uses persistent file storage in desktop mode, localStorage in browser
+let settingsCache = null;
+let settingsSaveTimeout = null;
+let settingsInitialized = false;
+
+async function initSettings() {
+  if (settingsInitialized) return;
+  
+  if (window.pywebview && window.pywebview.api) {
+    console.log('[Settings] Initializing persistent settings');
+    // Desktop mode - load from file
+    try {
+      settingsCache = await window.pywebview.api.get_settings();
+      console.log('[Settings] Loaded settings:', Object.keys(settingsCache).length, 'keys');
+      settingsInitialized = true;
+    } catch (e) {
+      console.error('Failed to load settings:', e);
+      settingsCache = {};
+      settingsInitialized = true;
+    }
+  } else {
+    // Browser mode - use localStorage
+    console.log('[Settings] Using localStorage mode');
+    settingsCache = null; // Will fall back to localStorage
+    settingsInitialized = true;
+  }
+}
+
+async function persistSettings() {
+  if (window.pywebview && window.pywebview.api && settingsCache) {
+    try {
+      console.log('[Settings] Saving settings:', Object.keys(settingsCache).length, 'keys');
+      await window.pywebview.api.save_settings(settingsCache);
+    } catch (e) {
+      console.error('Failed to save settings:', e);
+    }
+  }
+}
+
+function saveJSON(key, obj) {
+  if (settingsCache !== null) {
+    // Desktop mode - update cache and trigger async save
+    settingsCache[key] = obj;
+    clearTimeout(settingsSaveTimeout);
+    settingsSaveTimeout = setTimeout(() => persistSettings(), 500); // Debounce saves
+  } else {
+    // Browser mode - use localStorage
+    try { localStorage.setItem(key, JSON.stringify(obj)); } catch(e) {}
+  }
+}
+
+function loadJSON(key) {
+  if (settingsCache !== null) {
+    // Desktop mode - read from cache
+    try {
+      return settingsCache[key] || null;
+    } catch(e) {
+      return null;
+    }
+  } else {
+    // Browser mode - use localStorage
+    try {
+      const s = localStorage.getItem(key);
+      return s ? JSON.parse(s) : null;
+    } catch(e) {
+      return null;
+    }
+  }
+}
+
+// Try to initialize settings immediately
+(async () => {
+  // Poll for pywebview to be ready with full API
+  let attempts = 0;
+  while (!settingsInitialized && attempts < 50) {
+    if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.get_settings === 'function') {
+      await initSettings();
+      break;
+    }
+    await new Promise(resolve => setTimeout(resolve, 100));
+    attempts++;
+  }
+  if (!settingsInitialized) {
+    // Fallback to localStorage mode
+    console.log('[Settings] Pywebview API not detected after', attempts * 100, 'ms, using localStorage');
+    settingsCache = null;
+    settingsInitialized = true;
+  }
+})();
+
+// Save settings before closing
+window.addEventListener('beforeunload', () => {
+  if (settingsSaveTimeout) {
+    clearTimeout(settingsSaveTimeout);
+  }
+  if (settingsCache && window.pywebview && window.pywebview.api) {
+    // Synchronous save on close - use navigator.sendBeacon if available
+    try {
+      window.pywebview.api.save_settings(settingsCache);
+    } catch(e) {
+      console.error('Failed to save settings on close:', e);
+    }
+  }
+});
 
 /* ===== Hierarchical Settings Management ===== */
 /**
@@ -1325,17 +1427,9 @@ async function handleFileOpened(data) {
   // Populate XML input for reference
   byId('xmlInput').value = data.xml;
   
-  // Parse XML for metadata (abbreviations, etc.)
-  const parser = new DOMParser();
-  const xmlDoc = parser.parseFromString(data.xml, "text/xml");
-  
-  // Render the HTML returned by Python
-  if (data.html) {
-    await renderDocument(xmlDoc, data.html);
-  } else {
-    // Fallback if no HTML returned (shouldn't happen if Python works)
-    await renderDocument(xmlDoc);
-  }
+  // Show a message that the file is loaded and ready to preview
+  const area = byId('renderArea');
+  area.innerHTML = '<div class="small-muted">File loaded successfully. Click <strong>Preview</strong> to view the chart.</div>';
 }
 
 byId('resetBtn').addEventListener('click', ()=>{
@@ -1388,16 +1482,25 @@ byId('transformBtn').addEventListener('click', async ()=> {
   }
 });
 
-// Export Discourse Chart: open exported chart in a new window with toolbar
-byId('exportChartBtn').addEventListener('click', ()=>{
+// Export Discourse Chart: save as standalone HTML file
+byId('exportChartBtn').addEventListener('click', async ()=>{
   const html = buildStandaloneHTML({ includeToolbar: true });
-  const w = window.open('', '_blank');
-  if(!w) {
-    alert('Export window blocked. Please allow popups for this app.');
-    return;
+  const filename = suggestExportFilename();
+  
+  if (window.pywebview && window.pywebview.api) {
+    try {
+      const result = await window.pywebview.api.save_file_dialog(html, filename, 'html');
+      if (result.success) {
+        alert('Chart exported successfully!');
+      } else if (result.error !== 'User cancelled') {
+        alert('Failed to export: ' + result.error);
+      }
+    } catch (err) {
+      alert('Error exporting chart: ' + err);
+    }
+  } else {
+    alert('File save not available in this environment.');
   }
-  w.document.write(html);
-  w.document.close();
 });
 
 function sanitizeFilename(name){
@@ -1473,24 +1576,64 @@ function downloadJSON(filename, data){
 const exportBtn = byId('exportSettingsBtn');
 const importBtn = byId('importSettingsBtn');
 const importInput = byId('settingsImportInput');
-if(exportBtn){ exportBtn.addEventListener('click', ()=>{
+if(exportBtn){ exportBtn.addEventListener('click', async ()=>{
   const data = collectAllSettings();
   const ts = new Date().toISOString().replace(/[:.]/g,'-');
-  downloadJSON(`flexxml-viewer-settings-${ts}.json`, { __meta:{ app:'flexxml-viewer', version:1, exportedAt: new Date().toISOString() }, data });
+  const filename = `fdat-settings-${ts}.json`;
+  const jsonContent = JSON.stringify({ __meta:{ app:'fdat', version:1, exportedAt: new Date().toISOString() }, data }, null, 2);
+  
+  if (window.pywebview && window.pywebview.api) {
+    try {
+      const result = await window.pywebview.api.save_file_dialog(jsonContent, filename, 'json');
+      if (result.success) {
+        alert('Settings exported successfully!');
+      } else if (result.error !== 'User cancelled') {
+        alert('Failed to export settings: ' + result.error);
+      }
+    } catch (err) {
+      alert('Error exporting settings: ' + err);
+    }
+  } else {
+    // Fallback for browser
+    downloadJSON(filename, { __meta:{ app:'fdat', version:1, exportedAt: new Date().toISOString() }, data });
+  }
 }); }
-if(importBtn && importInput){
-  importBtn.addEventListener('click', ()=> importInput.click());
-  importInput.addEventListener('change', async (e)=>{
-    const f = e.target.files && e.target.files[0]; if(!f) return;
-    try{
-      const txt = await f.text();
-      const json = JSON.parse(txt);
-      const payload = json && (json.data || json);
-      importAllSettings(payload);
-      alert('Settings imported. Reloading to apply…');
-      location.reload();
-    }catch(err){ alert('Failed to import settings: ' + (err?.message || String(err))); }
+if(importBtn){
+  importBtn.addEventListener('click', async ()=> {
+    if (window.pywebview && window.pywebview.api) {
+      try {
+        const result = await window.pywebview.api.open_json_dialog();
+        if (result.success) {
+          const json = JSON.parse(result.content);
+          const payload = json && (json.data || json);
+          importAllSettings(payload);
+          alert('Settings imported. Reloading to apply…');
+          location.reload();
+        } else if (result.error !== 'User cancelled') {
+          alert('Failed to import settings: ' + result.error);
+        }
+      } catch(err) {
+        alert('Failed to import settings: ' + (err?.message || String(err)));
+      }
+    } else {
+      // Fallback for browser - use hidden input
+      if (importInput) importInput.click();
+    }
   });
+  // Keep the input handler as fallback for browser mode
+  if (importInput) {
+    importInput.addEventListener('change', async (e)=>{
+      const f = e.target.files && e.target.files[0]; if(!f) return;
+      try{
+        const txt = await f.text();
+        const json = JSON.parse(txt);
+        const payload = json && (json.data || json);
+        importAllSettings(payload);
+        alert('Settings imported. Reloading to apply…');
+        location.reload();
+      }catch(err){ alert('Failed to import settings: ' + (err?.message || String(err))); }
+    });
+  }
 }
 
 byId('showNames').addEventListener('change', e=>{
@@ -2485,8 +2628,16 @@ async function renderDocument(xmlDoc, preRenderedHtml = null){
   const area = byId('renderArea');
   area.innerHTML = '';
 
+  console.log('[DEBUG] renderDocument called', {
+    hasPreRenderedHtml: !!preRenderedHtml,
+    rootTag: tag,
+    isTextChart: isTextChartDocument(xmlDoc)
+  });
+
   // Detect Text Chart (Discourse chart) and render via XSLT
-  if(isTextChartDocument(xmlDoc)){
+  // If preRenderedHtml is provided, the backend already validated and transformed it as a text chart
+  if(preRenderedHtml || isTextChartDocument(xmlDoc)){
+    console.log('[DEBUG] Entering text chart rendering block');
     let rendered;
     if (preRenderedHtml) {
       const wrapper = document.createElement('div');
@@ -2605,6 +2756,7 @@ async function renderDocument(xmlDoc, preRenderedHtml = null){
   // Only handle Discourse Charts (Text Charts) in this tool
   // For other XML types, redirect to the general FLEx XML Viewer
   if(!isTextChartDocument(xmlDoc)){
+    console.log('[DEBUG] NOT a text chart - showing error message');
     // Hide all Text Chart sections
     showLanguageProjectsSection(false);
     showTextGenresSection(false);
@@ -2898,9 +3050,26 @@ function applyCustomColumnsToArea(area){
 
 /* ===== Text Chart detection and rendering (XSLT) ===== */
 function isTextChartDocument(xmlDoc){
-  if(!xmlDoc || !xmlDoc.documentElement) return false;
+  if(!xmlDoc || !xmlDoc.documentElement) {
+    console.log('[DEBUG] isTextChartDocument: no xmlDoc or documentElement');
+    return false;
+  }
   // Typical structure: <document><chart>...</chart></document> or a top-level <chart>
-  return !!(xmlDoc.querySelector('document > chart > row') || xmlDoc.querySelector('chart > row'));
+  // Also check for chart element without requiring row (more lenient check)
+  const hasDocChartRow = !!xmlDoc.querySelector('document > chart > row');
+  const hasChartRow = !!xmlDoc.querySelector('chart > row');
+  const hasDocChart = !!xmlDoc.querySelector('document > chart');
+  const hasChart = !!xmlDoc.querySelector('chart');
+  
+  console.log('[DEBUG] isTextChartDocument checks:', {
+    hasDocChartRow,
+    hasChartRow,
+    hasDocChart,
+    hasChart,
+    result: hasDocChartRow || hasChartRow || hasDocChart || hasChart
+  });
+  
+  return !!(hasDocChartRow || hasChartRow || hasDocChart || hasChart);
 }
 
 async function renderTextChart(xmlDoc){
