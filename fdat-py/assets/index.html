@@ -568,7 +568,8 @@
           <select id="currentDocumentSelect" style="flex:1;padding:6px;border:1px solid #e5e5e5;border-radius:6px">
             <option value="">(Select a document)</option>
           </select>
-          <button id="addDocumentBtn" class="small-btn" title="Add a new document">Add Document</button>
+          <button id="loadDocumentBtn" class="small-btn" title="Load and render the saved XML for this document">Load Document XML</button>
+          <button id="addDocumentBtn" class="small-btn" title="Save current XML as a document">Save Current as Document</button>
           <button id="editDocumentBtn" class="small-btn secondary" title="Edit current document">Edit</button>
           <button id="exportDocumentBtn" class="small-btn secondary" title="Export current document settings">Export</button>
           <button id="importDocumentBtn" class="small-btn secondary" title="Import document settings">Import</button>
@@ -930,31 +931,55 @@ let globalState = {
   postlogueAuto: true
 };
 
-// Settings storage - uses persistent file storage in desktop mode, localStorage in browser
-let settingsCache = null;
+// Settings storage - backend-only via pywebview API
+let settingsCache = {};
 let settingsSaveTimeout = null;
 let settingsInitialized = false;
+
+function ensureSettingsIndicator(){
+  let el = document.getElementById('settingsStatus');
+  if (!el){
+    el = document.createElement('span');
+    el.id = 'settingsStatus';
+    el.className = 'small-muted';
+    el.style.marginLeft = '8px';
+    const header = document.querySelector('.controls-row');
+    if (header){ header.appendChild(el); }
+    else {
+      const h = document.querySelector('header div');
+      if (h) h.appendChild(el);
+    }
+  }
+  return el;
+}
 
 async function initSettings() {
   if (settingsInitialized) return;
   
-  if (window.pywebview && window.pywebview.api) {
-    console.log('[Settings] Initializing persistent settings');
-    // Desktop mode - load from file
-    try {
-      settingsCache = await window.pywebview.api.get_settings();
-      console.log('[Settings] Loaded settings:', Object.keys(settingsCache).length, 'keys');
-      settingsInitialized = true;
-    } catch (e) {
-      console.error('Failed to load settings:', e);
-      settingsCache = {};
-      settingsInitialized = true;
-    }
-  } else {
-    // Browser mode - use localStorage
-    console.log('[Settings] Using localStorage mode');
-    settingsCache = null; // Will fall back to localStorage
+  const indicator = ensureSettingsIndicator();
+  if (!(window.pywebview && window.pywebview.api && typeof window.pywebview.api.get_settings === 'function')){
+    console.error('[Settings] pywebview API not ready');
+    if (indicator){ indicator.textContent = 'Settings: backend not ready'; indicator.style.color = '#d32f2f'; }
+    return;
+  }
+  console.log('[Settings] Initializing persistent settings');
+  try {
+    settingsCache = await window.pywebview.api.get_settings();
+    settingsCache = settingsCache && typeof settingsCache === 'object' ? settingsCache : {};
+    console.log('[Settings] Loaded settings:', Object.keys(settingsCache).length, 'keys');
     settingsInitialized = true;
+    if (indicator){ indicator.textContent = 'Settings: loaded'; indicator.style.color = 'var(--muted)'; }
+    if (window.pywebview.api && typeof window.pywebview.api.log === 'function'){
+      try{ window.pywebview.api.log('[Settings] Loaded ' + Object.keys(settingsCache).length + ' keys'); }catch(_){ }
+    }
+  } catch (e) {
+    console.error('Failed to load settings:', e);
+    settingsCache = {};
+    settingsInitialized = true;
+    if (indicator){ indicator.textContent = 'Settings: load error'; indicator.style.color = '#d32f2f'; }
+    if (window.pywebview.api && typeof window.pywebview.api.log === 'function'){
+      try{ window.pywebview.api.log('[Settings] Load error: ' + (e?.message||String(e))); }catch(_){ }
+    }
   }
 }
 
@@ -963,40 +988,35 @@ async function persistSettings() {
     try {
       console.log('[Settings] Saving settings:', Object.keys(settingsCache).length, 'keys');
       await window.pywebview.api.save_settings(settingsCache);
+      const indicator = ensureSettingsIndicator();
+      if (indicator){ indicator.textContent = 'Settings: saved'; indicator.style.color = 'var(--muted)'; }
+      if (window.pywebview.api && typeof window.pywebview.api.log === 'function'){
+        try{ window.pywebview.api.log('[Settings] Saved'); }catch(_){ }
+      }
     } catch (e) {
       console.error('Failed to save settings:', e);
+      const indicator = ensureSettingsIndicator();
+      if (indicator){ indicator.textContent = 'Settings: save error'; indicator.style.color = '#d32f2f'; }
+      if (window.pywebview.api && typeof window.pywebview.api.log === 'function'){
+        try{ window.pywebview.api.log('[Settings] Save error: ' + (e?.message||String(e))); }catch(_){ }
+      }
     }
   }
 }
 
 function saveJSON(key, obj) {
-  if (settingsCache !== null) {
-    // Desktop mode - update cache and trigger async save
-    settingsCache[key] = obj;
-    clearTimeout(settingsSaveTimeout);
-    settingsSaveTimeout = setTimeout(() => persistSettings(), 500); // Debounce saves
-  } else {
-    // Browser mode - use localStorage
-    try { localStorage.setItem(key, JSON.stringify(obj)); } catch(e) {}
-  }
+  // Backend-only: update cache and trigger async save
+  settingsCache[key] = obj;
+  clearTimeout(settingsSaveTimeout);
+  settingsSaveTimeout = setTimeout(() => persistSettings(), 500); // Debounce saves
 }
 
 function loadJSON(key) {
-  if (settingsCache !== null) {
-    // Desktop mode - read from cache
-    try {
-      return settingsCache[key] || null;
-    } catch(e) {
-      return null;
-    }
-  } else {
-    // Browser mode - use localStorage
-    try {
-      const s = localStorage.getItem(key);
-      return s ? JSON.parse(s) : null;
-    } catch(e) {
-      return null;
-    }
+  // Backend-only: read from cache
+  try {
+    return settingsCache[key] || null;
+  } catch(e) {
+    return null;
   }
 }
 
@@ -1004,7 +1024,7 @@ function loadJSON(key) {
 (async () => {
   // Poll for pywebview to be ready with full API
   let attempts = 0;
-  while (!settingsInitialized && attempts < 50) {
+  while (!settingsInitialized && attempts < 100) {
     if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.get_settings === 'function') {
       await initSettings();
       break;
@@ -1013,10 +1033,9 @@ function loadJSON(key) {
     attempts++;
   }
   if (!settingsInitialized) {
-    // Fallback to localStorage mode
-    console.log('[Settings] Pywebview API not detected after', attempts * 100, 'ms, using localStorage');
-    settingsCache = null;
-    settingsInitialized = true;
+    console.error('[Settings] Backend API not detected after', attempts * 100, 'ms');
+    const indicator = ensureSettingsIndicator();
+    if (indicator){ indicator.textContent = 'Settings: backend not ready'; indicator.style.color = '#d32f2f'; }
   }
 })();
 
@@ -5256,6 +5275,7 @@ function updateGenreList(){
 function initDocumentControls(){
   const select = byId('currentDocumentSelect');
   const nameInput = byId('documentName');
+  const loadBtn = byId('loadDocumentBtn');
   const addBtn = byId('addDocumentBtn');
   const editBtn = byId('editDocumentBtn');
   const exportBtn = byId('exportDocumentBtn');
@@ -5268,9 +5288,15 @@ function initDocumentControls(){
     if(doc){
       nameInput.value = doc.name || '';
       nameInput.disabled = false;
+      if(loadBtn){
+        const canLoad = !!doc.sourceXmlPath;
+        loadBtn.disabled = !canLoad;
+        loadBtn.title = canLoad ? 'Load and render the saved XML for this document' : 'No saved XML path found for this document';
+      }
     } else {
       nameInput.value = '';
       nameInput.disabled = true;
+      if(loadBtn){ loadBtn.disabled = true; loadBtn.title = 'Select a document first'; }
     }
   }
   
@@ -5280,7 +5306,51 @@ function initDocumentControls(){
     saveCurrentContext(ctx);
     updateDocumentInputs();
     refreshAllSettingsFromContext();
+    // Auto-load XML if available
+    const doc = getCurrentDocument();
+    if(doc && doc.sourceXmlPath){
+      loadDocumentXmlAndRender();
+    }
   });
+    async function loadDocumentXmlAndRender(){
+      const doc = getCurrentDocument();
+      if(!doc || !doc.sourceXmlPath){
+        alert('This document has no saved XML path.');
+        return;
+      }
+      showProcessing('Loading document…');
+      try{
+        await new Promise(r=>setTimeout(r,50));
+        if(window.pywebview && window.pywebview.api && typeof window.pywebview.api.read_document_xml === 'function'){
+          const res = await window.pywebview.api.read_document_xml(doc.sourceXmlPath);
+          if(!res || !res.success){
+            throw new Error(res?.error || 'Failed to read document XML');
+          }
+          const xmlText = (res.content || '').trim();
+          if(!xmlText){ throw new Error('Empty XML content'); }
+          byId('xmlInput').value = xmlText;
+          // Transform to HTML and render
+          let html = await window.pywebview.api.transform_content(xmlText);
+          if (html && typeof html === 'string' && html.startsWith('Error')) {
+            throw new Error(html);
+          }
+          const p = new DOMParser();
+          const xmlDoc = p.parseFromString(xmlText, 'application/xml');
+          if(xmlDoc.querySelector('parsererror')) throw new Error('XML parse error');
+          showProcessing('Rendering…');
+          await new Promise(r=>setTimeout(r,50));
+          await renderDocument(xmlDoc, html);
+        } else {
+          alert('Backend not available to read document XML.');
+        }
+      } catch(err){
+        alert('Error loading document: ' + (err?.message || String(err)));
+      } finally {
+        hideProcessing();
+      }
+    }
+
+    loadBtn?.addEventListener('click', loadDocumentXmlAndRender);
   
   nameInput.addEventListener('change', ()=>{
     const doc = getCurrentDocument();
@@ -5292,25 +5362,72 @@ function initDocumentControls(){
     }
   });
   
-  addBtn?.addEventListener('click', ()=>{
+  addBtn?.addEventListener('click', async ()=>{
     const ctx = loadCurrentContext();
+    if(!ctx.languageId){
+      alert('Please select a language first.');
+      return;
+    }
     if(!ctx.genreId){
       alert('Please select a genre first.');
       return;
     }
-    const name = prompt('Enter document name:');
+    const xmlText = byId('xmlInput')?.value?.trim() || '';
+    if(!xmlText){
+      alert('Paste or open an XML document first, then try again.');
+      return;
+    }
+    const name = prompt('Enter document name to save:', 'Document');
     if(!name) return;
-    const id = 'doc_' + Date.now().toString(36);
-    const genre = getCurrentGenre();
-    if(!genre) return;
-    const doc = ensureDocument(genre, id);
-    doc.name = name.trim();
-    const settings = loadHierarchicalSettings();
-    saveHierarchicalSettings(settings);
-    ctx.documentId = id;
-    saveCurrentContext(ctx);
-    updateDocumentList();
-    refreshAllSettingsFromContext();
+    // Save XML via backend into app data under documents/<lang>/<genre>/
+    try{
+      if(window.pywebview && window.pywebview.api && typeof window.pywebview.api.save_document_xml === 'function'){
+        let result = await window.pywebview.api.save_document_xml(ctx.languageId, ctx.genreId, name.trim(), xmlText, false);
+        if(result && result.success){
+          const genre = getCurrentGenre();
+          if(!genre) return;
+          const id = result.doc_id || ('doc_' + Date.now().toString(36));
+          const doc = ensureDocument(genre, id);
+          doc.name = name.trim();
+          // Track source path of saved XML
+          doc.sourceXmlPath = result.path || '';
+          const settings = loadHierarchicalSettings();
+          saveHierarchicalSettings(settings);
+          ctx.documentId = id;
+          saveCurrentContext(ctx);
+          updateDocumentList();
+          refreshAllSettingsFromContext();
+          alert('Document saved successfully.');
+        } else if(result && result.error === 'exists'){
+          const ok = confirm('A document with this name already exists. Overwrite?');
+          if(!ok) return;
+          result = await window.pywebview.api.save_document_xml(ctx.languageId, ctx.genreId, name.trim(), xmlText, true);
+          if(result && result.success){
+            const genre = getCurrentGenre();
+            if(!genre) return;
+            const id = result.doc_id || ('doc_' + Date.now().toString(36));
+            const doc = ensureDocument(genre, id);
+            doc.name = name.trim();
+            doc.sourceXmlPath = result.path || '';
+            const settings = loadHierarchicalSettings();
+            saveHierarchicalSettings(settings);
+            ctx.documentId = id;
+            saveCurrentContext(ctx);
+            updateDocumentList();
+            refreshAllSettingsFromContext();
+            alert('Document overwritten successfully.');
+          } else {
+            alert('Failed to overwrite document: ' + (result?.error || 'Unknown error'));
+          }
+        } else {
+          alert('Failed to save document: ' + (result?.error || 'Unknown error'));
+        }
+      } else {
+        alert('Saving documents is not available in this environment.');
+      }
+    } catch(err){
+      alert('Failed to save document: ' + (err?.message || String(err)));
+    }
   });
   
   editBtn?.addEventListener('click', ()=>{
