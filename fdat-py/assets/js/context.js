@@ -37,7 +37,10 @@ function loadCurrentContext(){
   }
   return ctx;
 }
-function saveCurrentContext(ctx){ saveJSON(CURRENT_CONTEXT_KEY, ctx); }
+function saveCurrentContext(ctx){
+  saveJSON(CURRENT_CONTEXT_KEY, ctx);
+  try{ window.dispatchEvent(new CustomEvent('fdat:context-changed', { detail: { ctx } })); }catch(_){/* noop */}
+}
 function ensureLanguage(settings, languageId){
   if(!settings.languages[languageId]){
     settings.languages[languageId] = {

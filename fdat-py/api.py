@@ -55,7 +55,7 @@ class FdatApi:
         Opens a native file dialog to select an XML file.
         """
         file_types = ('XML Files (*.xml)', 'All files (*.*)')
-        result = self.window.create_file_dialog(webview.OPEN_DIALOG, allow_multiple=False, file_types=file_types)
+        result = self.window.create_file_dialog(webview.FileDialog.OPEN, allow_multiple=False, file_types=file_types)
         
         if result:
             file_path = result[0]
@@ -96,7 +96,7 @@ class FdatApi:
             if not suggested_filename.endswith('.html'):
                 suggested_filename += '.html'
                 
-        result = self.window.create_file_dialog(webview.SAVE_DIALOG, save_filename=suggested_filename, file_types=file_types)
+        result = self.window.create_file_dialog(webview.FileDialog.SAVE, save_filename=suggested_filename, file_types=file_types)
         
         if result:
             save_path = result
@@ -114,7 +114,7 @@ class FdatApi:
         Opens a native file dialog to select a JSON file for import.
         """
         file_types = ('JSON Files (*.json)', 'All files (*.*)')
-        result = self.window.create_file_dialog(webview.OPEN_DIALOG, allow_multiple=False, file_types=file_types)
+        result = self.window.create_file_dialog(webview.FileDialog.OPEN, allow_multiple=False, file_types=file_types)
         
         if result:
             file_path = result[0]
