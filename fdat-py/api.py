@@ -4,6 +4,8 @@ import os
 import json
 from pathlib import Path
 from core import FdatProcessor
+from services.settings_service import SettingsService
+from services.documents_service import DocumentService
 
 class FdatApi:
     def __init__(self, assets_path):
@@ -18,9 +20,9 @@ class FdatApi:
         
         self.settings_dir.mkdir(parents=True, exist_ok=True)
         self.settings_file = self.settings_dir / 'settings.json'
-        # Documents base directory inside app data
-        self.documents_dir = self.settings_dir / 'documents'
-        self.documents_dir.mkdir(parents=True, exist_ok=True)
+        # Initialize service layer
+        self.settings_service = SettingsService(self.settings_dir)
+        self.document_service = DocumentService(self.settings_dir)
 
     def set_window(self, window):
         self.window = window
@@ -30,21 +32,20 @@ class FdatApi:
         Load persistent settings from file.
         """
         try:
-            if self.settings_file.exists():
-                with open(self.settings_file, 'r', encoding='utf-8') as f:
-                    return json.load(f)
+            return self.settings_service.get_settings()
         except Exception as e:
             self.log(f"Error loading settings: {str(e)}")
-        return {}
+            return {}
 
     def save_settings(self, settings):
         """
         Save settings to persistent file.
         """
         try:
-            with open(self.settings_file, 'w', encoding='utf-8') as f:
-                json.dump(settings, f, indent=2)
-            return {'success': True}
+            result = self.settings_service.save_settings(settings)
+            if not result.get('success'):
+                self.log(f"Error saving settings: {result.get('error')}")
+            return result
         except Exception as e:
             self.log(f"Error saving settings: {str(e)}")
             return {'success': False, 'error': str(e)}
@@ -128,19 +129,6 @@ class FdatApi:
     def log(self, message):
         print(f"[JS Log]: {message}")
 
-    def _sanitize_filename(self, name: str) -> str:
-        """Sanitize a human-entered name into a safe filename (no extension)."""
-        base = (name or 'document').strip()
-        # Replace illegal characters with underscores, collapse whitespace
-        base = ''.join(ch if ch.isalnum() or ch in ('-', '_', ' ') else '_' for ch in base)
-        base = '_'.join(base.split())  # spaces to underscores, collapse repeats
-        # Limit length
-        if len(base) > 120:
-            base = base[:120]
-        if not base:
-            base = 'document'
-        return base
-
     def save_document_xml(self, language_id: str, genre_id: str, document_name: str, xml_content: str, overwrite: bool = False):
         """
         Save the provided XML content under app data in a language/genre folder.
@@ -150,17 +138,10 @@ class FdatApi:
         If the file exists and overwrite is False, returns {'success': False, 'error': 'exists', 'path': ...}
         """
         try:
-            if not language_id or not genre_id:
-                return {'success': False, 'error': 'Missing language or genre'}
-            safe_name = self._sanitize_filename(document_name)
-            rel_path = Path('documents') / language_id / genre_id / (safe_name + '.xml')
-            abs_path = self.settings_dir / rel_path
-            abs_path.parent.mkdir(parents=True, exist_ok=True)
-            if abs_path.exists() and not overwrite:
-                return {'success': False, 'error': 'exists', 'path': str(abs_path), 'doc_id': str(rel_path)}
-            with open(abs_path, 'w', encoding='utf-8') as f:
-                f.write(xml_content or '')
-            return {'success': True, 'path': str(abs_path), 'doc_id': str(rel_path)}
+            result = self.document_service.save_document_xml(language_id, genre_id, document_name, xml_content, overwrite)
+            if not result.get('success') and result.get('error') != 'exists':
+                self.log(f"Error saving document XML: {result.get('error')}")
+            return result
         except Exception as e:
             self.log(f"Error saving document XML: {str(e)}")
             return {'success': False, 'error': str(e)}
@@ -173,25 +154,10 @@ class FdatApi:
         Returns {success, content, path}.
         """
         try:
-            if not path_or_doc_id:
-                return {'success': False, 'error': 'No path provided'}
-            p = Path(path_or_doc_id)
-            # Resolve relative doc_id under settings_dir
-            if not p.is_absolute():
-                p = self.settings_dir / p
-            # Ensure path stays within settings_dir
-            try:
-                p_resolved = p.resolve()
-                base_resolved = self.settings_dir.resolve()
-                if base_resolved not in p_resolved.parents and p_resolved != base_resolved:
-                    return {'success': False, 'error': 'Path outside app data not allowed'}
-            except Exception:
-                return {'success': False, 'error': 'Invalid path'}
-            if not p.exists():
-                return {'success': False, 'error': 'File not found', 'path': str(p)}
-            with open(p, 'r', encoding='utf-8') as f:
-                content = f.read()
-            return {'success': True, 'content': content, 'path': str(p)}
+            result = self.document_service.read_document_xml(path_or_doc_id)
+            if not result.get('success'):
+                self.log(f"Error reading document XML: {result.get('error')}")
+            return result
         except Exception as e:
             self.log(f"Error reading document XML: {str(e)}")
             return {'success': False, 'error': str(e)}
