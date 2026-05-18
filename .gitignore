@@ -220,4 +220,5 @@ dmypy.json
 .pytype/
 
 # Cython debug symbols
-cython_debug/.DS_Store
+cython_debug/
+.DS_Store
