@@ -2,6 +2,9 @@
 .vscode
 scripts
 
+# Tauri / Rust build output
+src-tauri/target/
+
 # Large Files
 dist
 
