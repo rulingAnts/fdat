@@ -1469,7 +1469,7 @@ byId('fileInput').addEventListener('change', e=>{
     if(bytes[0] === 0xFF && bytes[1] === 0xFE) encoding = 'UTF-16LE';
     else if(bytes[0] === 0xFE && bytes[1] === 0xFF) encoding = 'UTF-16BE';
     const text = new TextDecoder(encoding).decode(buf).replace(/^﻿/, '');
-    if(!text || !text.trim()){ alert('File appears to be empty or could not be read.'); return; }
+    if(!text || !text.trim()){ alert(`Could not read file content.\nFile: ${f.name}\nReported size: ${f.size} bytes\nRead: ${buf.byteLength} bytes\n\nIf both sizes are 0, the file may be a cloud placeholder not yet downloaded to this device.`); return; }
     byId('xmlInput').value = text;
     msg.textContent = '✓ ' + f.name;
   };
