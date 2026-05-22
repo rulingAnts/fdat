@@ -4,9 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>Flex DiscourseChart Analysis Tool (FDAT)</title>
-<link rel="manifest" href="./manifest.webmanifest">
 <meta name="theme-color" content="#0b6edb">
-<link rel="apple-touch-icon" href="./assets/icon-128.png">
 <style>
   :root{
     --accent:#0b6edb;
@@ -317,28 +315,10 @@
 <header>
   <h1>Flex DiscourseChart Analysis Tool (FDAT)</h1>
   <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
-    <button id="pwaInstallBtn" class="small-btn secondary" style="display:none" title="Install this app on your device">Install App</button>
     <div class="small-muted" hidden>© 2025 Seth Johnston</div>
   </div>
 </header>
 
-<!-- First-run loading overlay -->
-<div id="firstRunOverlay" style="display:none; position:fixed; inset:0; background:linear-gradient(180deg, #f7faff, #ffffff); z-index:100000; align-items:center; justify-content:center;">
-  <div style="text-align:center; color:#334;">
-    <div class="spinner" style="margin:0 auto 12px; width:44px; height:44px; border:4px solid #cfe0ff; border-top-color:#0b6edb; border-radius:50%; animation:spin 1s linear infinite"></div>
-    <div style="font-weight:600;">Preparing offline support…</div>
-    <div class="small-muted" style="margin-top:6px;">First run only. This may take a few seconds.</div>
-  </div>
-</div>
-<style>
-@keyframes spin { from { transform: rotate(0deg);} to { transform: rotate(360deg);} }
-</style>
-<div id="installBanner" style="display:none; position:sticky; top:0; z-index:10000; background:#0b6edb; color:#fff; padding:8px 12px; border-radius:8px; margin-bottom:10px; box-shadow:0 4px 18px rgba(0,0,0,0.2);">
-  <span>Install FDAT for offline use and a full-screen experience.</span>
-  <button id="installNow" class="small-btn" style="margin-left:10px; background:#fff; color:#0b6edb;">Install</button>
-  <button id="installDismiss" class="small-btn secondary" style="margin-left:6px; background:rgba(255,255,255,0.15); color:#fff;">Not now</button>
-  <span class="small-muted" style="margin-left:10px; opacity:0.9">You can install later from your browser menu.</span>
-  </div>
 
   <section id="aboutPanel" class="prologue-panel" aria-live="polite" data-collapsed="0" data-no-persist="1" style="background:#eef5ff;border:1px solid #c8dbff;padding:0;border-radius:8px;margin-bottom:12px">
     <div class="collapsible-header" id="aboutHeader" style="padding:10px 14px">
@@ -783,180 +763,6 @@
 </footer>
 
 <script>
-// Register Service Worker for PWA offline + updates
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    // Show first-run overlay if SW hasn't taken control yet
-    try {
-      const overlay = document.getElementById('firstRunOverlay');
-      const showOverlay = () => { if (overlay) { overlay.style.display = 'flex'; } };
-      const hideOverlay = () => { if (overlay) { overlay.style.display = 'none'; } };
-      const hasController = !!navigator.serviceWorker.controller;
-      // If no controller, likely first run. Show overlay until SW precache completes or a timeout.
-      if (!hasController) {
-        showOverlay();
-        // Safety timeout in case of network issues (still lets user interact)
-        setTimeout(hideOverlay, 15000);
-        navigator.serviceWorker.addEventListener('controllerchange', hideOverlay);
-        navigator.serviceWorker.addEventListener('message', (evt) => {
-          const data = evt.data || {};
-          if (data && data.type === 'PRECACHE_DONE') hideOverlay();
-        });
-      }
-    } catch (_) {}
-    function showUpdateToast(onReload){
-      const t = document.createElement('div');
-      t.style.position = 'fixed'; t.style.bottom = '16px'; t.style.left = '50%'; t.style.transform = 'translateX(-50%)';
-      t.style.background = '#111'; t.style.color = '#fff'; t.style.padding = '8px 12px'; t.style.borderRadius = '999px'; t.style.boxShadow = '0 6px 22px rgba(0,0,0,0.35)';
-      t.style.zIndex = '100000'; t.style.display = 'flex'; t.style.alignItems = 'center'; t.style.gap = '10px';
-      t.textContent = 'Update available';
-      const btn = document.createElement('button'); btn.textContent = 'Reload'; btn.style.background = '#0b6edb'; btn.style.color = '#fff'; btn.style.border = 'none'; btn.style.padding = '6px 10px'; btn.style.borderRadius = '999px'; btn.style.cursor = 'pointer';
-      btn.addEventListener('click', ()=>{ onReload && onReload(); document.body.removeChild(t); });
-      t.appendChild(btn); document.body.appendChild(t);
-    }
-    navigator.serviceWorker.register('./sw.js').then(reg => {
-      // If there is a waiting worker (already installed but not active), offer to reload now
-      if (reg.waiting) {
-        showUpdateToast(() => {
-          reg.waiting.postMessage({ type: 'SKIP_WAITING' });
-          reg.waiting.addEventListener('statechange', () => { if (reg.waiting.state === 'activated') location.reload(); });
-        });
-      }
-      reg.addEventListener('updatefound', () => {
-        const newWorker = reg.installing;
-        if (!newWorker) return;
-        newWorker.addEventListener('statechange', () => {
-          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-            showUpdateToast(() => {
-              if (reg.waiting) {
-                reg.waiting.postMessage({ type: 'SKIP_WAITING' });
-                reg.waiting.addEventListener('statechange', () => { if (reg.waiting.state === 'activated') location.reload(); });
-              } else {
-                location.reload();
-              }
-            });
-          }
-        });
-      });
-    }).catch(console.warn);
-  });
-}
-
-// ===== PWA Install (tablet-only if possible) =====
-(function(){
-  const installBtn = document.getElementById('pwaInstallBtn');
-  const banner = document.getElementById('installBanner');
-  const installNow = document.getElementById('installNow');
-  const installDismiss = document.getElementById('installDismiss');
-  let deferredPrompt = null;
-
-  function isStandalone(){
-    return window.matchMedia && window.matchMedia('(display-mode: standalone)').matches
-      || window.navigator.standalone === true;
-  }
-  function isiOS(){
-    const ua = window.navigator.userAgent || '';
-    return /iPad|iPhone|iPod/.test(ua) || (ua.includes('Mac') && navigator.maxTouchPoints > 1);
-  }
-  function isAndroid(){
-    return /Android/i.test(window.navigator.userAgent || '');
-  }
-  function isTablet(){
-    const w = Math.max(window.screen?.width || 0, window.innerWidth || 0);
-    const h = Math.max(window.screen?.height || 0, window.innerHeight || 0);
-    const minDim = Math.min(w, h);
-    const touch = (navigator.maxTouchPoints || 0) > 0;
-    // Heuristic: touch device and at least 768px on the short side
-    return touch && minDim >= 768;
-  }
-
-  // iPad: show an instruction banner (no beforeinstallprompt on Safari)
-  function showIOSInstallHint(){
-    if(!isiOS() || !isTablet() || isStandalone()) return;
-    const b = document.createElement('div');
-    b.style.position='fixed'; b.style.bottom='16px'; b.style.left='50%'; b.style.transform='translateX(-50%)';
-    b.style.background='#111'; b.style.color='#fff'; b.style.padding='10px 12px'; b.style.borderRadius='12px'; b.style.boxShadow='0 6px 22px rgba(0,0,0,0.35)'; b.style.zIndex='100000'; b.style.maxWidth='90vw';
-    b.innerHTML = 'To install FDAT: tap the Share icon <span aria-hidden="true">▵</span> and choose <strong>Add to Home Screen</strong>.';
-    const close = document.createElement('button'); close.textContent='✕'; close.style.marginLeft='10px'; close.style.background='transparent'; close.style.color='#fff'; close.style.border='none'; close.style.cursor='pointer'; close.style.fontSize='1rem';
-    close.addEventListener('click', ()=> document.body.removeChild(b));
-    b.appendChild(close); document.body.appendChild(b);
-  }
-
-  window.addEventListener('beforeinstallprompt', (e)=>{
-    // Android/Chromium: intercept and show our button when tablet heuristics pass
-    e.preventDefault();
-    deferredPrompt = e;
-    const dismissed = localStorage.getItem('fdat_install_banner_dismissed') === '1';
-    const shouldShow = !isStandalone() && isTablet() && isAndroid() && !dismissed;
-    if(installBtn){ installBtn.style.display = shouldShow ? 'inline-flex' : 'none'; }
-    if(banner){ banner.style.display = shouldShow ? 'block' : 'none'; }
-  });
-
-  if(installBtn){
-    installBtn.addEventListener('click', async ()=>{
-      if(!deferredPrompt) return;
-      deferredPrompt.prompt();
-      try{ await deferredPrompt.userChoice; }catch(_){/* ignore */}
-      deferredPrompt = null; installBtn.style.display='none';
-      if(banner) banner.style.display='none';
-    });
-  }
-
-  if(installNow){
-    installNow.addEventListener('click', async ()=>{
-      if(!deferredPrompt) return;
-      deferredPrompt.prompt();
-      try{ await deferredPrompt.userChoice; }catch(_){/* ignore */}
-      deferredPrompt = null; if(installBtn) installBtn.style.display='none'; if(banner) banner.style.display='none';
-    });
-  }
-  if(installDismiss){
-    installDismiss.addEventListener('click', ()=>{
-      localStorage.setItem('fdat_install_banner_dismissed','1');
-      if(banner) banner.style.display='none';
-    });
-  }
-
-  // On load, show iPad hint if applicable
-  window.addEventListener('load', showIOSInstallHint);
-})();
-
-// ===== PWA run/install detection =====
-(function(){
-  try{
-    const LS_KEY = 'fdat_pwa_run_state_v1';
-    function load(){ try{ const s = localStorage.getItem(LS_KEY); return s ? JSON.parse(s) : {}; } catch(_) { return {}; } }
-    function save(obj){ try{ localStorage.setItem(LS_KEY, JSON.stringify(obj)); } catch(_) {}
-    }
-    function isStandalone(){
-      return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
-        || (window.navigator.standalone === true);
-    }
-    const nowIso = new Date().toISOString();
-    const state = load();
-    if(!state.firstSeen){ state.firstSeen = nowIso; }
-    state.lastSeen = nowIso;
-    state.isStandalone = isStandalone();
-    // Persist and expose a simple status for tooling (e.g., dev:android_pwa)
-    save(state);
-    window.FDAT_PWA_STATUS = {
-      ...state,
-      // convenient booleans
-      firstRun: state.firstSeen === state.lastSeen,
-      installed: state.isStandalone === true
-    };
-    // Log once per session for visibility during testing
-    if(!sessionStorage.getItem('fdat_pwa_status_logged')){
-      console.log('[FDAT] PWA status:', window.FDAT_PWA_STATUS);
-      sessionStorage.setItem('fdat_pwa_status_logged','1');
-    }
-    // When the PWA is installed from browser, mark state immediately
-    window.addEventListener('appinstalled', ()=>{
-      const s = load(); s.isStandalone = true; save(s);
-      console.log('[FDAT] PWA installed');
-    });
-  }catch(_){/* ignore */}
-})();
 /* ===== Helpers ===== */
 const byId = id => document.getElementById(id);
 const escapeHtml = s => String(s||'').replace(/[&<>"]/g, c=>'&' + ({'&':'amp','<':'lt','>':'gt','"':'quot'})[c] + ';');

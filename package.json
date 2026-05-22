@@ -6,36 +6,10 @@
     "type": "git",
     "url": "https://github.com/rulingAnts/fdat.git"
   },
-  "main": "main.js",
   "scripts": {
-    "start": "electron .",
-    "dev:web": "node .local/dev-server.js",
-  "shell:dev": "node .local/shell-dev-auto.js",
-  "shell:dev:reset": "node .local/shell-dev-auto.js --reset",
-    "shell:dev:no-server": "FDAT_SHELL_URL=http://localhost:5173 electron .",
-    "shell:dev:no-server:reset": "FDAT_SHELL_URL=http://localhost:5173 electron . --reset",
-    "shell:dev:unreachable": "FDAT_SHELL_URL=http://localhost:5999 electron . --reset",
-    "shell:web": "electron .",
-  "shell:web:reset": "electron . --reset",
-  "shell:reset-all": "electron . --reset-all",
-    "shell:pack": "electron-builder --dir",
-    "shell:dist": "electron-builder -mwl",
-    "dev:android_pwa": "node .local/dev-android-pwa.js",
-    "pwa:icons": "node scripts/gen-pwa-icons.mjs",
-  "clean:dist:mac": "rm -rf dist/mac* dist/*-mac-*.dmg dist/*-mac-*.zip dist/latest-mac*.yml",
-  "clean:dist:linux": "rm -rf dist/linux* dist/*-linux-*.AppImage dist/*-linux-*.tar.* dist/latest-linux*.yml",
-  "clean:dist:all": "rm -rf dist",
-    "pack": "electron-builder --dir",
-    "dist": "electron-builder",
-  "dist:linux": "electron-builder --linux",
-  "dist:linux:all": "electron-builder --linux AppImage",
-    "dist:win": "electron-builder --win portable",
-    "dist:win:portable": "electron-builder --win portable",
-    "dist:win:all": "electron-builder --win nsis portable",
-    "dist:mac": "electron-builder --mac",
-    "dist:all": "electron-builder -mwl",
-    "dist:checksums": "node scripts/gen-checksums.mjs",
-    "dist:all+checksums": "npm run dist:all && npm run dist:checksums"
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "dev:web": "node .local/dev-server.js"
   },
   "author": "",
   "engines": {
@@ -43,73 +17,6 @@
   },
   "license": "AGPL-3.0-only",
   "devDependencies": {
-    "electron": "^30.0.0",
-    "electron-builder": "^24.13.3",
-    "sharp": "^0.33.4"
-  },
-  "build": {
-    "appId": "com.rulingants.fdat",
-    "productName": "Flex DiscourseChart Analysis Tool (FDAT)",
-    "files": [
-      "assets/**/*",
-      "main.js",
-      "package.json"
-    ],
-    "directories": {
-      "output": "dist"
-    },
-    "mac": {
-      "target": [
-        {
-          "target": "dmg",
-          "arch": [
-            "universal"
-          ]
-        },
-        {
-          "target": "zip",
-          "arch": [
-            "universal"
-          ]
-        }
-      ],
-      "artifactName": "${productName}-${version}-mac-universal.${ext}",
-      "icon": "assets/icon.icns",
-      "category": "public.app-category.productivity"
-    },
-    "win": {
-      "artifactName": "${productName}-${version}-win-${arch}-${target}.${ext}",
-      "target": [
-        { "target": "nsis", "arch": ["x64"] },
-        { "target": "portable", "arch": ["x64"] }
-      ],
-      "icon": "assets/icon.ico"
-    },
-    "linux": {
-      "target": [
-        {
-          "target": "AppImage",
-          "arch": [
-            "x64",
-            "arm64"
-          ]
-        }
-      ],
-      "artifactName": "${productName}-${version}-linux-${arch}.${ext}",
-      "category": "Utility"
-    },
-    "nsis": {
-      "oneClick": false,
-      "perMachine": false,
-      "allowToChangeInstallationDirectory": true,
-      "license": "LICENSE"
-    },
-    "publish": [
-      {
-        "provider": "github",
-        "owner": "rulingAnts",
-        "repo": "fdat"
-      }
-    ]
+    "@tauri-apps/cli": "^2"
   }
 }
