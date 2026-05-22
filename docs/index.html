@@ -1457,30 +1457,17 @@ function migrateToHierarchical(){
 /* ===== File & UI wiring ===== */
 byId('fileInput').addEventListener('change', e=>{
   const f = e.target.files && e.target.files[0];
-  console.log('[FDAT] fileInput change fired. files:', e.target.files, 'selected:', f ? f.name : 'none');
-  if(!f) { console.warn('[FDAT] No file selected, returning.'); return; }
-  console.log('[FDAT] File info — name:', f.name, '| size:', f.size, 'bytes | type:', f.type || '(no type)');
+  if(!f) return;
   const msg = byId('fileLoadedMsg');
   msg.textContent = '';
   const reader = new FileReader();
   reader.onload = evt => {
     const text = evt.target.result;
-    console.log('[FDAT] FileReader onload fired. Result type:', typeof text, '| length:', text ? text.length : 'null/undefined', '| first 100 chars:', text ? JSON.stringify(text.slice(0, 100)) : 'N/A');
-    if(!text || !text.trim()){
-      console.error('[FDAT] Text is empty or whitespace-only after read.');
-      alert('File appears to be empty or could not be read.');
-      return;
-    }
+    if(!text || !text.trim()){ alert('File appears to be empty or could not be read. Please check that the file was exported correctly from FLEx.'); return; }
     byId('xmlInput').value = text;
     msg.textContent = '✓ ' + f.name;
-    console.log('[FDAT] File loaded successfully into xmlInput.');
   };
-  reader.onerror = (err) => {
-    console.error('[FDAT] FileReader onerror fired:', reader.error);
-    alert('Could not read the file. Please try again or paste the XML directly.');
-  };
-  reader.onabort = () => { console.warn('[FDAT] FileReader read was aborted.'); };
-  console.log('[FDAT] Starting FileReader.readAsText...');
+  reader.onerror = () => { alert('Could not read the file. Please try again or paste the XML directly.'); };
   reader.readAsText(f);
 });
 
