@@ -1457,24 +1457,31 @@ function migrateToHierarchical(){
 /* ===== File & UI wiring ===== */
 byId('fileInput').addEventListener('change', e=>{
   const f = e.target.files && e.target.files[0];
-  if(!f) return;
+  console.log('[FDAT] fileInput change fired. files:', e.target.files, 'selected:', f ? f.name : 'none');
+  if(!f) { console.warn('[FDAT] No file selected, returning.'); return; }
+  console.log('[FDAT] File info — name:', f.name, '| size:', f.size, 'bytes | type:', f.type || '(no type)');
   const msg = byId('fileLoadedMsg');
   msg.textContent = '';
   const reader = new FileReader();
   reader.onload = evt => {
-    const buf = evt.target.result;
-    const bytes = new Uint8Array(buf);
-    // Detect encoding from BOM
-    let encoding = 'UTF-8';
-    if(bytes[0] === 0xFF && bytes[1] === 0xFE) encoding = 'UTF-16LE';
-    else if(bytes[0] === 0xFE && bytes[1] === 0xFF) encoding = 'UTF-16BE';
-    const text = new TextDecoder(encoding).decode(buf).replace(/^﻿/, '');
-    if(!text || !text.trim()){ alert(`Could not read file content.\nFile: ${f.name}\nReported size: ${f.size} bytes\nRead: ${buf.byteLength} bytes\n\nIf both sizes are 0, the file may be a cloud placeholder not yet downloaded to this device.`); return; }
+    const text = evt.target.result;
+    console.log('[FDAT] FileReader onload fired. Result type:', typeof text, '| length:', text ? text.length : 'null/undefined', '| first 100 chars:', text ? JSON.stringify(text.slice(0, 100)) : 'N/A');
+    if(!text || !text.trim()){
+      console.error('[FDAT] Text is empty or whitespace-only after read.');
+      alert('File appears to be empty or could not be read.');
+      return;
+    }
     byId('xmlInput').value = text;
     msg.textContent = '✓ ' + f.name;
+    console.log('[FDAT] File loaded successfully into xmlInput.');
   };
-  reader.onerror = () => { alert('Could not read the file. Please try again or paste the XML directly.'); };
-  reader.readAsArrayBuffer(f);
+  reader.onerror = (err) => {
+    console.error('[FDAT] FileReader onerror fired:', reader.error);
+    alert('Could not read the file. Please try again or paste the XML directly.');
+  };
+  reader.onabort = () => { console.warn('[FDAT] FileReader read was aborted.'); };
+  console.log('[FDAT] Starting FileReader.readAsText...');
+  reader.readAsText(f);
 });
 
 byId('resetBtn').addEventListener('click', ()=>{
