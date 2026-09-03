@@ -43,9 +43,9 @@
   },
   "license": "AGPL-3.0-only",
   "devDependencies": {
-    "electron": "^30.0.0",
-    "electron-builder": "^24.13.3",
-    "sharp": "^0.33.4"
+    "electron": "^39.8.10",
+    "electron-builder": "^26.15.3",
+    "sharp": "^0.35.0"
   },
   "build": {
     "appId": "com.rulingants.fdat",
