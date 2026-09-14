@@ -1,6 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Synthetic FLEx "Export Text Chart" sample used by the smoke test.
-     It contains no real language data; the shape mirrors what FLEx exports. -->
+<!-- Synthetic sample used by the smoke test. It contains no real language data.
+
+     NOT a byte-accurate copy of FLEx's "Export Text Chart" output: it is a
+     minimal document that exercises the renderer. Ways real FLEx exports differ
+     (see desktop/research/flex-anchors/report-draft.md section 7.1 for the full
+     spec read out of DiscourseExporter.cs):
+       - <languages> comes after </chart>, and language elements carry font,
+         vernacular and RightToLeft attributes;
+       - rows carry id="<label>" and only one of endPara/endSent;
+       - word, gloss, lit, listRef and rownum elements carry a lang attribute;
+       - listRef markers are wrapped in "(" / ")" lit elements;
+       - dependent clauses use two clauseMkr elements with target attributes and
+         bracket lits, not a single "1b-1c" text;
+       - moved text uses <moveMkr>Preposed|Postposed</moveMkr>;
+       - header rows are one per template depth, not always exactly two.
+     Add a fixture captured from a real export before relying on any of that. -->
 <document>
   <languages>
     <language lang="xyz" font="Charis SIL"/>
