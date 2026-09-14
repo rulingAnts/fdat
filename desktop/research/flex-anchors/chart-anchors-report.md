@@ -524,3 +524,53 @@ Use a consistent lowercase `fdat` — Windows is case-insensitive but FieldWorks
 and Mercurial would treat `FDAT/` and `fdat/` as different paths there.
 
 Implemented in the sidecar as `ensureBackupDir` alongside `linkedFiles`.
+
+## Addendum 9: where merging actually works (verified, 2026-09)
+
+Requirement: edits from different machines or users on the same project should merge, not clobber.
+That requirement is already met — but by the **model store, not by the files**.
+
+### The model merges properly; that is the whole argument for it
+
+FLExBridge splits the chart into `Linguistics/Discourse/Charting.discourse` and merges it
+**per object, keyed by GUID, per field**: every concrete class gets
+`MergePartnerFinder = GuidKeyFinder` with `IsAtomic = false`, and custom properties merge under the
+key `Custom_<Class>_<name>` (CA 3.7, 5.4 — spot-checked). So:
+
+- Two users annotating **different rows** of the same chart merge cleanly and automatically.
+- Two users editing **different FDAT fields on the same row** also merge cleanly, because merge is
+  per field, not per object.
+- Only the same field on the same row collides, and then Chorus picks one side and writes a conflict
+  note — which is exactly how FLEx behaves for its own data ("if two changes are made to the same
+  object, one is picked", `../refs/sil-docs-notes.md`).
+
+That is the merge/diff behaviour we want, and no file format in `LinkedFiles` can match it.
+
+### Files cannot do better — and `.txt` fails harder than `.json`
+
+| Format | Merge behaviour on a file two peers changed |
+|---|---|
+| `.json` (unclaimed) | No merge. `DefaultFileTypeHandler` records an `UnmergableFileTypeConflict` and keeps the merging machine's copy. **Soft failure:** the sync completes; one side's file content is lost. |
+| `.txt` (claimed) | `TextFileTypeHandler` runs `diff3 -m`. Disjoint line edits merge cleanly; an overlapping conflict **throws**, `ChorusMerge` catches it and `return 1` (`ChorusMerge/Program.cs`), Mercurial treats a non-zero merge-tool exit as a failed merge and leaves the file unresolved. **Hard failure:** it takes the whole Send/Receive into a recovery path (`HgRepository.RecoverFromFailedMerge` runs `hg resolve --all`). |
+
+Note also that Chorus explicitly disables Mercurial's own line-level premerge —
+`mergeToolsSection.Set("chorusmerge.premerge", "False")` — because *"If the premerge is allowed to
+happen Mercurial will occasionally think it did a good job and not call our mergetool. This has data
+corrupting results for us."* So there is no free line-merge underneath; whatever the handler does is
+all that happens.
+
+This **reverses** the earlier framing in addendum 6. For a file two peers might both write, `.json`'s
+soft failure is safer than `.txt`'s hard one: a conflicting FDAT backup must never be able to break a
+colleague's Send/Receive.
+
+### Conclusion
+
+1. **Keep per-peer filenames for the backups.** One writer per file means no merge is ever attempted,
+   so neither failure mode can occur. This stays the design.
+2. **Mergeable data belongs in custom fields**, where merging is per row and per field and needs no
+   file format at all.
+3. **If some future data genuinely must be a shared file and must merge**, structure it so merges are
+   line-disjoint — JSON Lines: one compact JSON object per line, one line per row, sorted by row
+   GUID, with a stable key order — so two users editing different rows touch different lines and
+   diff3 succeeds. Accept that same-row edits will hard-fail, and weigh that against simply putting
+   the data in the model instead.
