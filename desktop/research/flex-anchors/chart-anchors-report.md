@@ -103,3 +103,12 @@ Net: `DsConstChart` GUID is stable for the life of the text (multiple charts per
 - What `MergeCellContentsMethod` does with `ConstChartTag`s in the source cell when WordGroups are moved.
 - The FieldWorks checkout is sparse; folders outside `Src/{Common,FwCoreDlgs,LexText,Utilities/FixFwDataDll,xWorks}` were not searched for uses of chart `Name`/`Description`.
 - The Avalonia UI (`Src/xWorks/Avalonia`) was only spot-checked.
+
+## Appendix: statements from SIL documentation supplied by the owner
+
+See `../refs/sil-docs-notes.md` for verbatim quotes. The points that bear on this report:
+
+- Send/Receive syncs everything in the fwdata file, explicitly including "custom field definitions", "styles" and all interlinear data; it does not sync per-machine settings (`ConfigurationSettings/*.xml` except `.fwlayout`), or files outside the project's default LinkedFiles folder. ("Using Send/Receive", software.sil.org; Technical Notes on FieldWorks Send/Receive §3.6.)
+- Linked files under the default `LinkedFiles` folder are included subject to a 10 MB limit for the listed image/audio extensions; per the Chorus source, other extensions such as `.json` are not excluded but get a 1 MiB limit and an opaque (whole-file, merging-machine-wins) merge with a conflict note.
+- Merge is 3-way per object by GUID; when two users modify the same field one side is picked and a conflict report is written; a modification beats a concurrent deletion. (Technical Notes §1, §3.2.)
+- SIL documents repo-level editing of split files (lists) as an advanced but supported path; new list items need only class, guid and Name/Abbreviation. (Technical Notes §4.8.)
