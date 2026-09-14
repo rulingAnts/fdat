@@ -59,6 +59,7 @@ Exposed as `window.fdatHost` by `shell/preload.js`; every call returns a Promise
 | `openProject(name)` | `openProject` | Opens (read-only at first). Returns writing systems and whether write access was granted. |
 | `listCharts()` | `listCharts` | `{ guid, title, textTitle, templateName, rowCount }` per `DsConstChart`. |
 | `getChartXml(guid)` | `exportChart` | The chart as FDAT XML (§4) with `guid` attributes. The renderer loads it with `window.FDAT.loadXmlText()` + `previewCurrentXml()`, which already exist. |
+| `getLinkedFiles()` | `linkedFiles` | The resolved LinkedFiles root (LCM's `LangProject.LinkedFilesRootDir` — never build this path by hand), the `Others` folder, FDAT's backup folder under it, and whether the root is still the default one. A relocated folder syncs nothing, so the UI must warn instead of writing backups that never travel. |
 | `getChartMarkers()` | `listChartMarkers` | The Chart Markers possibility list as a tree (guid, name, abbreviation, description, colours, hidden, children). FDAT needs this to render and style markers by GUID rather than by scraped label — see addendum 4 in `research/flex-anchors/chart-anchors-report.md`. |
 | `getTemplate(chartGuid)` | `getTemplate` | The chart's template as column groups and leaf columns with GUIDs, at any depth. |
 | `getAnnotations(chartGuid)` / `putAnnotations(chartGuid, data)` | same | Everything FDAT stores for a chart: custom fields on the chart and its rows, plus marker styling read from the Chart Markers list (§5). |

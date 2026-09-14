@@ -450,3 +450,55 @@ a sweeper would silently delete backups.
 - View/UI state (column widths, notes side, current filter) stays in FDAT's local app-data, never in
   the project: FLEx keeps its own equivalents per machine, and Send/Receive deliberately excludes
   them.
+
+## Addendum 7: locating the LinkedFiles folder (verified, 2026-09)
+
+Yes — and FDAT must **ask LCM rather than construct the path**, because the folder is relocatable and
+the stored value is a *relative* path with its own resolution rules.
+
+`ILangProject.LinkedFilesRootDir` is a resolved, absolute path
+(`liblcm/src/SIL.LCModel/DomainImpl/OverridesLangProj.cs:92-115`):
+
+> "Return LinkedFilesRootDir if explicitly set, otherwise DataDirectory."
+
+```csharp
+return String.IsNullOrEmpty(LinkedFilesRootDir_Generated)
+    ? Path.Combine(m_cache.ProjectId.ProjectFolder, LcmFileHelper.ksLinkedFilesDir)
+    : LinkedFilesRelativePathHelper.GetLinkedFilesFullPathFromRelativePath(
+        Services.GetInstance<ILcmDirectories>().ProjectsDirectory,
+        LinkedFilesRootDir_Generated, m_cache.ProjectId.ProjectFolder);
+```
+
+So the getter already handles both the default (`<ProjectFolder>/LinkedFiles`) and a user-relocated
+folder stored as a relative token. Never reimplement that.
+
+Helpers and constants (`liblcm/src/SIL.LCModel/LcmFileHelper.cs:39-197`):
+
+| API | Returns |
+|---|---|
+| `LcmFileHelper.ksLinkedFilesDir` | `"LinkedFiles"` |
+| `LcmFileHelper.ksOtherLinkedFilesDir` | `"Others"` |
+| `LcmFileHelper.GetDefaultLinkedFilesDir(projectPath)` | `<projectPath>/LinkedFiles` — the *default*, for comparison |
+| `LcmFileHelper.GetOtherExternalFilesDir(linkedFilesPath)` | `<linkedFilesPath>/Others` |
+| `LcmFileHelper.GetMediaDir` / `GetPicturesDir` | the sibling subfolders |
+
+flexlibs already imports `LcmFileHelper` (`flexlibs/flexlibs/code/FLExLCM.py:34`), so all of this is
+available from the sidecar with no extra plumbing.
+
+### The check that matters
+
+Because a relocated LinkedFiles folder syncs **nothing** (addendum 6), FDAT should compare the
+resolved root against the default and warn rather than silently write backups that never travel:
+
+```python
+lp   = project.project.LangProject
+root = lp.LinkedFilesRootDir                                   # resolved, absolute
+dflt = LcmFileHelper.GetDefaultLinkedFilesDir(cache.ProjectId.ProjectFolder)
+synced = os.path.normcase(os.path.abspath(root)) == os.path.normcase(os.path.abspath(dflt))
+backup_dir = os.path.join(LcmFileHelper.GetOtherExternalFilesDir(root), "fdat")
+```
+
+If `synced` is false, tell the user their Linked Files folder is outside the project so FDAT backups
+will not reach colleagues, and offer to keep backups locally instead. Do not move the folder —
+FLEx's help says plainly "Do not change the Linked Files folder location" (`../refs/sil-docs-notes.md`),
+and relocating it has side effects on every picture path (`LinkedFilesRootDirSideEffects`).

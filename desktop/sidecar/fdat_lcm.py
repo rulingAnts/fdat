@@ -22,10 +22,17 @@ import json
 import sys
 from xml.sax.saxutils import escape, quoteattr
 
+import os
+
 try:
     from flexlibs import FLExInitialize, FLExCleanup, FLExProject, AllProjectNames
 except ImportError:  # keep `--help` style usage working without flexlibs
     FLExInitialize = FLExCleanup = FLExProject = AllProjectNames = None
+
+try:
+    from SIL.LCModel import LcmFileHelper
+except ImportError:
+    LcmFileHelper = None
 
 
 # ----------------------------------------------------------------------------
@@ -96,6 +103,36 @@ class LcmSession:
             return (multi.BestVernacularAlternative.Text or '')
         except Exception:
             return ''
+
+    # -- linked files ---------------------------------------------------------
+
+    def linked_files(self):
+        """Where FDAT may keep per-chart backup files, and whether they will sync.
+
+        LinkedFilesRootDir is resolved by LCM: it returns <project>/LinkedFiles when
+        unset, otherwise it resolves the stored relative path. Never build this by hand.
+        Send/Receive only carries linked files when the folder is the default one, so
+        report that so the caller can warn instead of writing backups that never travel.
+        """
+        lp = self.lp
+        root = lp.LinkedFilesRootDir
+        project_folder = self.project.project.ProjectId.ProjectFolder
+        default_root = (LcmFileHelper.GetDefaultLinkedFilesDir(project_folder)
+                        if LcmFileHelper is not None else os.path.join(project_folder, 'LinkedFiles'))
+        others = (LcmFileHelper.GetOtherExternalFilesDir(root)
+                  if LcmFileHelper is not None else os.path.join(root, 'Others'))
+
+        def norm(p):
+            return os.path.normcase(os.path.abspath(p)) if p else ''
+
+        return {
+            'linkedFilesRoot': root,
+            'defaultRoot': default_root,
+            # False means the user relocated the folder: FLExBridge syncs nothing from it.
+            'syncedBySendReceive': norm(root) == norm(default_root),
+            'othersDir': others,
+            'fdatBackupDir': os.path.join(others, 'fdat'),
+        }
 
     # -- charts ---------------------------------------------------------------
 
@@ -291,6 +328,8 @@ def serve(session, project_name=None):
             session.close(); return True
         if method == 'listCharts':
             return session.charts()
+        if method == 'linkedFiles':
+            return session.linked_files()
         if method == 'exportChart':
             return session.export_chart_xml(params['guid'])
         raise KeyError('unknown method: ' + method)
