@@ -1,12 +1,12 @@
 export const meta = {
   name: 'flex-anchor-research',
-  description: 'Research where FDAT data can be anchored/linked in the FLEx (LCM) data model: sweep, ~20 verifications, critique, gap sweep, synthesis',
+  description: 'Research where FDAT data can be anchored/linked in the FLEx (LCM) data model: 8 sweeps, ~30 verifications, critic panel, gap sweep, reviewed synthesis',
   phases: [
     { title: 'Sweep', detail: 'eight investigators over liblcm, FieldWorks, flexbridge, flexlibs/FLExTools and GitHub docs' },
-    { title: 'Verify', detail: '20 skeptics: critical claims first, spread across investigations (+ up to 4 the critic asks for)' },
-    { title: 'Critique', detail: 'completeness critic: extra verifications and at most 4 gaps' },
-    { title: 'Gap sweep', detail: 'one investigator per gap' },
-    { title: 'Synthesize', detail: 'cited anchor-points report' },
+    { title: 'Verify', detail: '24 skeptics, critical claims first, spread across investigations, plus up to 6 requested by the critics' },
+    { title: 'Critique', detail: 'panel of three critics (model/sync mechanics, FLEx UI behaviour, FDAT design fit)' },
+    { title: 'Gap sweep', detail: 'up to 9 gap investigations, each with its key claim verified' },
+    { title: 'Synthesize', detail: 'draft, two reviewers, final revision' },
   ],
 }
 
@@ -141,26 +141,29 @@ const sweepResults = await pipeline(
   (res, inv) => res ? { key: inv.key, summary: res.summary, openQuestions: res.openQuestions || [], findings: res.findings || [] } : null
 )
 const sweep = sweepResults.filter(Boolean)
-log(`sweep: ${sweep.length} investigations, ${sweep.reduce((n, r) => n + r.findings.length, 0)} findings`)
+const totalFindings = sweep.reduce((n, r) => n + r.findings.length, 0)
+log(`sweep: ${sweep.length} investigations, ${totalFindings} findings`)
+
+const FRAMING = `The design question: where can FDAT anchor per-row data (colour bands, custom-column values that must link to specific rows), per-marker styling/visibility, and per-chart settings so that Send/Receive syncs them without breaking FLEx. The owner's framing: FDAT's starting data is the Text Chart tab (DsConstChart and its rows/cells), so data should be linked to the chart, not to the baseline/gloss/tagging/print tabs. The owner is open to model fields, custom fields, linked files, or any other easy solution. A separate, already spot-checked report on chart-level anchors exists at /home/user/fdat/desktop/research/flex-anchors/chart-anchors-report.md (custom fields on chart classes, GUID stability, sync layout): read it first; it takes precedence where findings overlap and nothing it settles needs re-verifying.`
 
 // Verification budget: critical claims first, taken round-robin across investigations so every
 // thread gets checked, capped at VERIFY_BUDGET. Everything else stays tagged [unchecked].
-const VERIFY_BUDGET = 20
+const VERIFY_BUDGET = 24
 const queues = sweep.map(r => ({ r, items: r.findings.map((f, i) => ({ r, f, i: i + 1 })).sort((a, b) => (b.f.critical ? 1 : 0) - (a.f.critical ? 1 : 0)) }))
 const selected = []
 for (let progress = true; progress && selected.length < VERIFY_BUDGET;) {
   progress = false
   for (const q of queues) { if (q.items.length && selected.length < VERIFY_BUDGET) { selected.push(q.items.shift()); progress = true } }
 }
-const totalFindings = sweep.reduce((n, r) => n + r.findings.length, 0)
 log(`verifying ${selected.length} of ${totalFindings} findings (${totalFindings - selected.length} left unchecked)`)
 
 const verifyOne = (s, extra) => run(`verify:${s.r.key}#${s.i}`, verifyPrompt(s.f, 'source') + `\nAlso search the repositories for code or documentation that contradicts the claim in practice (UI validation, sync handlers, migrations, exporters).${extra ? ' Why this claim was selected: ' + extra : ''}`, { phase: 'Verify', schema: VERDICT }).then(v => ({ ...s, verdict: v }))
 
 phase('Verify')
 const verified = (await parallel(selected.map(s => () => verifyOne(s, '')))).filter(Boolean)
-const statusOf = (r, idx) => { const v = verified.find(x => x.r === r && x.i === idx + 1); return v && v.verdict ? v.verdict.verdict : 'unchecked' }
-const correctionOf = (r, idx) => { const v = verified.find(x => x.r === r && x.i === idx + 1); return v && v.verdict && v.verdict.verdict === 'refuted' ? (v.verdict.correction || v.verdict.reason) : '' }
+const findVerdict = (r, idx) => verified.find(x => x.r === r && x.i === idx + 1)
+const statusOf = (r, idx) => { const v = findVerdict(r, idx); return v && v.verdict ? v.verdict.verdict : 'unchecked' }
+const correctionOf = (r, idx) => { const v = findVerdict(r, idx); return v && v.verdict && v.verdict.verdict === 'refuted' ? (v.verdict.correction || v.verdict.reason) : '' }
 const renderSweep = () => sweep.map(r => `## ${r.key}\n${r.summary}\n` + r.findings.map((f, i) => `- [${r.key} #${i + 1}] [${statusOf(r, i)}] (${f.confidence}${f.critical ? ', critical' : ''}) ${f.claim}\n  evidence: ${f.evidence}\n  source: ${f.source}\n  implication: ${f.implication || ''}` + (correctionOf(r, i) ? `\n  CORRECTION: ${correctionOf(r, i)}` : '')).join('\n') + (r.openQuestions.length ? `\nOpen questions: ${r.openQuestions.join(' / ')}` : '')).join('\n\n')
 log(`verified ${verified.length}: ${verified.filter(v => v.verdict && v.verdict.verdict === 'confirmed').length} confirmed, ${verified.filter(v => v.verdict && v.verdict.verdict === 'refuted').length} refuted`)
 
@@ -172,34 +175,51 @@ const CRITIQUE = {
     gaps: { type: 'array', items: { type: 'object', required: ['question', 'why', 'whereToLook'], properties: { question: { type: 'string' }, why: { type: 'string' }, whereToLook: { type: 'string' } } } },
   },
 }
+const LENSES = [
+  { key: 'mechanics', lens: 'LENS = DATA MODEL AND SYNC MECHANICS: LCM classes/properties, custom-field machinery, FLExBridge file layout and merge strategies, Chorus limits, FixFwData, data migrations.' },
+  { key: 'flex-ui', lens: 'LENS = FLEX UI BEHAVIOUR AND USER IMPACT: what FLEx shows, validates, repairs, deletes or exports for each candidate anchor; what a colleague would see after Send/Receive; what could confuse or break a FLEx user.' },
+  { key: 'fdat-fit', lens: 'LENS = FIT WITH FDAT: per-row values that must survive re-charting (row/cell GUID stability, re-anchoring), per-marker styling/visibility, per-chart settings, the linked-JSON idea, and what the sidecar/exporter mapping must change.' },
+]
 
 phase('Critique')
-const critique = await run('critic', `${CONTEXT}
-You are the completeness critic. Below are all findings from eight investigators, tagged [confirmed]/[refuted]/[unverifiable]/[unchecked] after a limited verification pass. The design question: where can FDAT anchor per-row data (colour bands, custom-column values that must link to specific rows), per-marker styling/visibility, and per-chart settings so that Send/Receive syncs them without breaking FLEx. The owner's framing: FDAT's starting data is the Text Chart tab (DsConstChart and its rows/cells), so data should be linked to the chart, not to the baseline/gloss/tagging/print tabs. A separate, already spot-checked report on chart-level anchors exists at /home/user/fdat/desktop/research/flex-anchors/chart-anchors-report.md: read it first; do not ask to re-verify what it settles.
-(1) extraVerify: AT MOST 4 [unchecked] findings that the design would depend on or that contradict another finding, by key and 1-based index exactly as listed. (2) gaps: AT MOST 4 questions no finding answers that a targeted read of the sources could answer, most important first, each with a concrete place to look.
+const critiques = (await parallel(LENSES.map(L => () => run(`critic:${L.key}`, `${CONTEXT}
+You are one of three completeness critics. ${L.lens}
+${FRAMING}
+Below are all findings from eight investigators, tagged [confirmed]/[refuted]/[unverifiable]/[unchecked] after a limited verification pass.
+(1) extraVerify: AT MOST 2 [unchecked] findings, within your lens, that the design would depend on or that contradict another finding; refer to them by key and 1-based index exactly as listed. (2) gaps: AT MOST 3 questions, within your lens, that no finding answers and that a targeted read of the sources could answer; most important first; each with a concrete place to look.
 
-${renderSweep()}`, { phase: 'Critique', schema: CRITIQUE, effort: 'high' })
+${renderSweep()}`, { phase: 'Critique', schema: CRITIQUE, effort: 'high' })))).filter(Boolean)
 
 const extras = []
-for (const s of ((critique && critique.extraVerify) || []).slice(0, 4)) {
+for (const c of critiques) for (const s of (c.extraVerify || []).slice(0, 2)) {
   const r = sweep.find(x => x.key === s.key); const f = r && r.findings[s.index - 1]
-  if (f && !verified.some(v => v.r === r && v.i === s.index) && !extras.some(x => x.f === f)) extras.push({ r, f, i: s.index, why: s.why })
+  if (f && !verified.some(v => v.r === r && v.i === s.index) && !extras.some(x => x.f === f) && extras.length < 6) extras.push({ r, f, i: s.index, why: s.why })
 }
-const gaps = ((critique && critique.gaps) || []).slice(0, 4)
-log(`critic asked for ${extras.length} extra verifications and ${gaps.length} gaps`)
+const gaps = critiques.flatMap(c => (c.gaps || []).slice(0, 3)).slice(0, 9)
+log(`critics asked for ${extras.length} extra verifications and ${gaps.length} gaps`)
 verified.push(...(await parallel(extras.map(s => () => verifyOne(s, s.why)))).filter(Boolean))
 
 phase('Gap sweep')
-const gapResults = (await parallel(gaps.map((g, i) => () =>
-  run(`gap:${i + 1}`, `${CONTEXT}\nGAP INVESTIGATION #${i + 1}\nQUESTION: ${g.question}\nWHY IT MATTERS: ${g.why}\nWHERE TO LOOK: ${g.whereToLook}\nAnswer the question with cited findings.`, { phase: 'Gap sweep', schema: FINDINGS, effort: 'high' })
-    .then(res => res ? { key: `gap: ${g.question}`, summary: res.summary, openQuestions: res.openQuestions || [], findings: res.findings || [] } : null)))).filter(Boolean)
+const gapResults = await pipeline(
+  gaps,
+  (g, _o, i) => run(`gap:${i + 1}`, `${CONTEXT}\n${FRAMING}\nGAP INVESTIGATION #${i + 1}\nQUESTION: ${g.question}\nWHY IT MATTERS: ${g.why}\nWHERE TO LOOK: ${g.whereToLook}\nAnswer the question with cited findings; mark the finding the answer hinges on critical=true.`, { phase: 'Gap sweep', schema: FINDINGS, effort: 'high' }),
+  async (res, g, i) => {
+    if (!res) return null
+    const findings = (res.findings || []).map(f => ({ ...f, status: 'unchecked', correction: '' }))
+    const keyIdx = findings.findIndex(f => f.critical)
+    if (keyIdx >= 0) {
+      const v = await run(`verify:gap${i + 1}#${keyIdx + 1}`, verifyPrompt(findings[keyIdx], 'source') + `\nAlso search the repositories for code or documentation that contradicts the claim in practice.`, { phase: 'Gap sweep', schema: VERDICT })
+      if (v) { findings[keyIdx].status = v.verdict; if (v.verdict === 'refuted') findings[keyIdx].correction = v.correction || v.reason }
+    }
+    return { key: `gap: ${g.question}`, summary: res.summary, openQuestions: res.openQuestions || [], findings }
+  }
+)
+const gapsDone = gapResults.filter(Boolean)
 
-const renderAll = () => renderSweep() + '\n\n' + gapResults.map(r => `## ${r.key}\n${r.summary}\n` + r.findings.map(f => `- [unchecked] ${f.claim}\n  evidence: ${f.evidence}\n  source: ${f.source}\n  implication: ${f.implication || ''}`).join('\n')).join('\n\n')
+const renderAll = () => renderSweep() + '\n\n' + gapsDone.map(r => `## ${r.key}\n${r.summary}\n` + r.findings.map(f => `- [${f.status}] ${f.claim}\n  evidence: ${f.evidence}\n  source: ${f.source}\n  implication: ${f.implication || ''}` + (f.correction ? `\n  CORRECTION: ${f.correction}` : '')).join('\n') + (r.openQuestions.length ? `\nOpen questions: ${r.openQuestions.join(' / ')}` : '')).join('\n\n')
 
-phase('Synthesize')
-const report = await run('synthesize', `${CONTEXT}
-Write the report "Where FDAT data can be anchored in a FLEx project" as GitHub-flavoured Markdown for the FDAT owner (a linguist-developer). FIRST read /home/user/fdat/desktop/research/flex-anchors/chart-anchors-report.md (chart-level anchors, custom fields on chart classes, GUID stability, sync layout; its key claims were spot-checked in the source) and integrate it; it takes precedence where findings overlap. The owner's framing: FDAT's starting data is the Text Chart tab (DsConstChart and its rows/cells); data should be linked to the chart, not to the baseline/gloss/tagging/print tabs; features are per-row colour-coding and custom columns (values must link to specific rows), per-marker styling and show/hide, and per-chart settings. The owner is open to model fields, custom fields, linked files, or any other easy solution, as long as it syncs with Send/Receive and does not break the FLEx data model.
-Findings below are tagged [confirmed]/[refuted]/[unverifiable]/[unchecked]: treat [refuted] as false (use the CORRECTION); say explicitly where a conclusion rests on [unchecked] material. Cite sources inline as backticked path:line or URLs. Structure:
+const REPORT_SPEC = `Write the report "Where FDAT data can be anchored in a FLEx project" as GitHub-flavoured Markdown for the FDAT owner (a linguist-developer). ${FRAMING} Features are per-row colour-coding and custom columns (values must link to specific rows), per-marker styling and show/hide, and per-chart settings; everything must sync with Send/Receive and must not break the FLEx data model.
+Findings are tagged [confirmed]/[refuted]/[unverifiable]/[unchecked]: treat [refuted] as false (use the CORRECTION); say explicitly where a conclusion rests on [unchecked] material. Cite sources inline as backticked path:line or URLs. Structure:
 1. Summary and recommendation: which anchor for which kind of data; the owner's linked-JSON idea: verdict and concrete design if viable; what to spike first on a real project.
 2. Anchor points table: object/property | what it can hold | owner and cardinality | synced by Send/Receive and merge granularity | visible/editable in FLEx | FLEx behaviour and risks | citation.
 3. Custom fields on chart classes (from the chart-anchors report) and on Segment/RnGenericRec: exact types, how definitions and values sync, programmatic-creation risks.
@@ -210,9 +230,15 @@ Findings below are tagged [confirmed]/[refuted]/[unverifiable]/[unchecked]: trea
 8. GUID stability of chart objects across FLEx edits, and a concrete re-anchoring strategy for rows.
 9. Concurrency, locking, write discipline, validation (FixFwData), deep links into FLEx.
 10. Open questions needing a real project or the SIL documents that were unreachable here (name them).
-Be exhaustive but concrete; no filler.
+Be exhaustive but concrete; no filler.`
 
-FINDINGS:
-${renderAll()}`, { phase: 'Synthesize', effort: 'high' })
+phase('Synthesize')
+const findingsText = renderAll()
+const draft = await run('synthesize:draft', `${CONTEXT}\n${REPORT_SPEC}\n\nFINDINGS:\n${findingsText}`, { phase: 'Synthesize', effort: 'high' })
+const reviews = (await parallel([
+  { key: 'accuracy', ask: 'Check every statement in the DRAFT against the FINDINGS and the chart-anchors report: flag anything unsupported, overstated, mis-cited, or contradicted by a [refuted] correction; flag [unchecked] material presented as settled. Where a citation is doubtful, open the source under the scratchpad clones and check it.' },
+  { key: 'usefulness', ask: 'Judge the DRAFT as the FDAT owner would: is the recommendation decisive and actionable, does it answer the per-row linkage question and the linked-JSON idea directly, is the spike plan concrete, is anything important buried or missing, is any section filler? List concrete edits.' },
+].map(R => () => run(`review:${R.key}`, `${CONTEXT}\nYou are reviewing a draft report. ${R.ask}\nReturn a numbered list of specific, actionable corrections (quote the draft text to change and say what to change it to). Be strict but do not invent findings.\n\nDRAFT:\n${draft}\n\nFINDINGS:\n${findingsText}`, { phase: 'Synthesize', effort: 'high' })))).filter(Boolean)
+const report = await run('synthesize:final', `${CONTEXT}\n${REPORT_SPEC}\n\nRevise the DRAFT below into the final report, applying every valid correction from the two REVIEWS (ignore a correction only if the FINDINGS contradict it, and say so in a short "Reviewer notes" appendix). Keep citations. Output only the final Markdown report.\n\nDRAFT:\n${draft}\n\nREVIEW 1 (accuracy):\n${reviews[0] || '(none)'}\n\nREVIEW 2 (usefulness):\n${reviews[1] || '(none)'}\n\nFINDINGS:\n${findingsText}`, { phase: 'Synthesize', effort: 'high' })
 
-return { report, stats: { investigations: sweep.length, findings: totalFindings, verified: verified.length, confirmed: verified.filter(v => v.verdict && v.verdict.verdict === 'confirmed').length, refuted: verified.filter(v => v.verdict && v.verdict.verdict === 'refuted').length, gaps: gapResults.length, reused } }
+return { report, draft, reviews, stats: { investigations: sweep.length, findings: totalFindings, verified: verified.length, confirmed: verified.filter(v => v.verdict && v.verdict.verdict === 'confirmed').length, refuted: verified.filter(v => v.verdict && v.verdict.verdict === 'refuted').length, gaps: gapsDone.length, reused } }
