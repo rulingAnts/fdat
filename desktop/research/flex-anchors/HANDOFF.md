@@ -2,6 +2,13 @@
 
 Purpose: let a fresh session finish this work without the original conversation.
 
+## Status: research COMPLETE (2026-09). Next step is item 1 under "To finish".
+
+The multi-agent run finished all 60 agents. `report-final.md` is the reviewed report;
+`report-draft.md`, `review-accuracy.md` and `review-usefulness.md` are its inputs.
+`chart-anchors-report.md` carries the spot-checked chart findings plus ten addenda written
+during the design conversation — read those addenda first, they are the decisions.
+
 ## Where things stand
 - Web app cleanup, bug fixes, tests, CI, desktop plan (`desktop/PLAN.md`), sidecar spike and shell
   starter are committed on branch `claude/stoic-albattani-oevuus` (no PR opened).
@@ -36,12 +43,30 @@ Purpose: let a fresh session finish this work without the original conversation.
    See the addendum in `chart-anchors-report.md`. Writes via flexlibs `OpenProject(name, True)` or a
    non-undoable task + `IUndoStackManager.Save()`.
 
-## To finish
-1. If the workflow did not complete: follow README.md here to resume (same session: runtime
-   resume; new container: re-clone sources, `rebuild.py`, run `continue.workflow.js` with
-   `args: { state }`). Its final output is a Markdown report (`report`) plus a draft and reviews.
-2. Write `desktop/FLEX-ANCHORS.md` from the workflow report + `chart-anchors-report.md` +
-   `../refs/sil-docs-notes.md`, then update `desktop/PLAN.md` §4 (exporter format corrections:
-   the real exporter writes `<row id="<label>">`, `lang` attributes on word/gloss, etc.) and §5
-   (custom fields on chart classes as primary; JSON fallback), and `desktop/sidecar/fdat_lcm.py`.
-3. Commit and push after each file.
+## To finish (in order)
+1. **Write `desktop/FLEX-ANCHORS.md`** — one readable summary for the repo, drawn from
+   `report-final.md`, the ten addenda in `chart-anchors-report.md`, and `../refs/sil-docs-notes.md`.
+   `desktop/PLAN.md` already carries the decisions; this is the standalone reference.
+2. **Fold the exporter corrections into `desktop/sidecar/fdat_lcm.py`** — `report-final.md` §7.3 has
+   a line-by-line table. The real FLEx export differs from the spike in about a dozen ways (row `id`,
+   `lang` attributes throughout, `<languages>` after `</chart>`, parenthesis lits around markers,
+   `<moveMkr>`, one header row per template depth, merged-cell widths, occurrence-based word
+   iteration). `test/fixtures/sample-chart.xml` lists the same differences in its header comment.
+3. **Emit the marker possibility GUID on `listRef`** so marker styling keys on GUID rather than a
+   scraped label (addendum 4). The XSL already passes `@guid` through to `data-guid`.
+4. **Phase 0 spike on a real Windows machine** — `report-final.md` §1.3/§1.4 has the steps. The
+   report recommends scoping v1 to three things only: the FDAT possibility list plus `FDAT_Band`
+   (ReferenceCollection) and `FDAT_ColumnValues` (String) on `ConstChartRow`, and
+   `FDAT_ChartSettings` (String) on `DsConstChart` — defer the rest until those survive a
+   two-machine Send/Receive round trip.
+5. Commit and push after each file. The research folder needs no further snapshots: the workflow is
+   finished and its journal is committed.
+
+## Unverified items that matter (from report-final.md)
+- A custom field on `DsDiscourseData` (the singleton in the split file's `<header>`) is untested.
+- `StText` (multiparagraph) custom fields are believed to merge per paragraph — derived from
+  strategy code, not observed.
+- Writing to a chart or row while the FLEx user has unsaved edits on the same object can cost them
+  that work: keep write windows short.
+- Nothing was found that prunes unreferenced files from `LinkedFiles`, but that is absence of
+  evidence — confirm a backup survives a Send/Receive round trip and a FLEx backup/restore.
