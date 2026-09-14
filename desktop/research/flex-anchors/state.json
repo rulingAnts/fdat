@@ -1646,6 +1646,24 @@
     "FieldWorks/Src/LexText/Interlinear/InterlinearExporter.cs:884-889",
     "flexlibs/flexlibs/code/FLExProject.py:1537-1545 (TextsGetAll)"
    ]
+  },
+  "verify:discourse-code#1": {
+   "verdict": "confirmed",
+   "reason": "The cited sources literally support the claim at HEAD e1434c8 (2026-09-11). Plain.xml:2 declares dataLabel=\"Discourse XML\" mode=\"doNothing\" with no transform attribute; MsWord.xml:2 declares mode=\"applySingleTransform\" transform=\"Discourse2Word.xsl\"; XLingPaper.xml:2 declares mode=\"applySingleTransform\" transform=\"Discourse2XLingPaper.xsl\". A full-tree git ls-tree shows these three are the only templates in \"Export Templates/Discourse\" (plus the two .xsl files), and a repo-wide grep finds no other template with dataLabel=\"Discourse XML\". DiscourseExportDialog.cs:72-95 reads mode (default \"xml\"), calls ExportPhase1(out exporter, outPath), then `switch (mode) { case \"doNothing\": break; case \"applySingleTransform\": ... exporter.PostProcess(sTransform, outPath, 1); }` (the openOffice branch at 96-140 is commented out; an absent mode hits no case, so also no transform). Lines 163-174: ExportPhase1 creates `new XmlTextWriter(fileName, Encoding.UTF8)`, constructs DiscourseExporter, calls ExportDisplay(), then writer.Close(). Searched for hidden post-processing and found none: CollectorEnv.cs:1547-1571 shows PostProcess is the only XSLT path (XslCompiledTransform after renaming to Phase1-<file>) and is only called from the applySingleTransform case; the base ExportDialog.cs:540-548,701-718 btnExport_Click calls the virtual DoExport then only optionally opens the export folder, PrepareForExport (779-782) returns true, and EnsureViewInfo (487-492) returns null when m_rgFxtTypes.Count == 0 (\"only non-Fxt exports available (like Discourse chart?)\"); the ExportFor/ValidXmlFile path (2257-2265) serves dictionary/reversal exports, not Discourse; ConstituentChart.cs:1391-1401 OnExportDiscourse only shows the dialog. DiscourseExporter.cs:83-93 ExportDisplay writes <document><chart>...</chart><languages/></document> directly, and DiscourseExportTests.cs:150-186 asserts on ExportDisplay output as the final shape. Nuances that do not refute: the element shape is produced by m_vc.Display(this, OpenObject, ConstChartVc.kfragPrintChart) (DiscourseExporter.cs:88), so it depends on ConstChartVc and runtime display state (LineChoices, NotesColumnOnRight, IsRightToLeft, parameterized in the test), not on the exporter alone; XmlTextWriter(fileName, Encoding.UTF8) implies a UTF-8 BOM and Formatting.None by default (output detail, not a transform). The clone is blobless so file history could not be checked beyond HEAD.",
+   "sourcesChecked": [
+    "FieldWorks/DistFiles/Language Explorer/Export Templates/Discourse/Plain.xml:1-4",
+    "FieldWorks/DistFiles/Language Explorer/Export Templates/Discourse/MsWord.xml:1-4",
+    "FieldWorks/DistFiles/Language Explorer/Export Templates/Discourse/XLingPaper.xml:1-5",
+    "FieldWorks/DistFiles/Language Explorer/Export Templates/Discourse/ (git ls-tree full-tree listing: Discourse2Word.xsl, Discourse2XLingPaper.xsl, MsWord.xml, Plain.xml, XLingPaper.xml)",
+    "FieldWorks/Src/LexText/Discourse/DiscourseExportDialog.cs:44-48,62-67,72-149,163-174",
+    "FieldWorks/Src/LexText/Discourse/DiscourseExporter.cs:1-50,83-93",
+    "FieldWorks/Src/Common/RootSite/CollectorEnv.cs:1540-1600",
+    "FieldWorks/Src/xWorks/ExportDialog.cs:487-492,540-560,690-725,779-806,2240-2275",
+    "FieldWorks/Src/LexText/Discourse/ConstituentChart.cs:1378-1401",
+    "FieldWorks/Src/LexText/Discourse/DiscourseTests/DiscourseExportTests.cs:150-200",
+    "FieldWorks git HEAD e1434c8 (2026-09-11) and git log for the two cited files (blobless clone, only HEAD visible)",
+    "repo-wide grep of DistFiles and Src for 'Discourse XML', 'Discourse2Word', 'Discourse2XLingPaper', 'PostProcess', 'XslCompiledTransform'"
+   ]
   }
  }
 }
