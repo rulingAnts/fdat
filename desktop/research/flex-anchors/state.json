@@ -2554,6 +2554,163 @@
     "The claim that CmFolder objects remain nested inside General/LanguageProject.langproj is inferred from the absence of a Media/Pictures extractor in Contexts; not verified against a real split project.",
     "How Chorus's LargeFileFilter treats an FDAT JSON sidecar placed under LinkedFiles/Others (size limit and the fact that non-XML files get no 3-way merge - last writer wins or binary conflict) was outside this gap's scope and should be checked before adopting the linked-file idea."
    ]
+  },
+  "gap:1": {
+   "summary": "End-to-end trace of a custom OwningAtomic StText field (FLEx's \"Multiparagraph text\" custom-field type) through FLExBridge and FixFwData. (1) NESTING: the split registers custom-property definitions in FLExBridge's MetadataCache before any rt data is cached, mapping LCM's `type=\"OA\"` to `OwningAtomic`; the custom prop therefore lands in the class's \"AllOwning\" cache and CmObjectNestingService nests the owned StText (and its StTxtPara/Segment tree) under `<Custom name=\"…\">` exactly like a built-in owning property, replacing the `<objsur t=\"o\">`; flattening has an explicit custom-owning branch that restores the objsur. A real fixture (RnGenericRec `<Custom name='Like'><StText>…<ownseq class='StTxtPara'>`) exists in FLExBridge's tests. (2) VALIDATION: CmObjectValidator resolves `<Custom>` by its name attribute and, for DataType.OwningAtomic, calls ValidateOwningAtomicProperty with isCustomProperty=true, which skips the attribute check and validates the single nested child object; the two-attribute rule applies only to basic value types. (3) MERGE: the custom OA property gets a name-keyed, non-atomic, ZeroOrOne-child strategy (`Custom_Text_<name>`); the nested `<StText guid>` is merged by the StText class strategy (GUID-keyed, per-element), `Paragraphs` with SignificantOrderPolicy, each `ownseq` StTxtPara by guid, and only each paragraph's `<Str>` is atomic. So the JSON merges per paragraph with order significance, NOT as one string — PLAN §5/§7's \"merges as one string\" claim is wrong for this field type (it would be true only for a String/Unicode custom field). The Text and its custom StText live together in Linguistics/TextCorpus/Text_<guid>.textincorpus, whose handler passes addCustomPropertyInformation=true. (4) CLEANUP: if the definition is removed, CustomPropertyFixer strips the undefined `<Custom>` element from the Text; FwDataFixer's multi-pass loop then removes the StText as a \"disowned object\" on the next pass and its StTxtPara/Segments as \"object with nonexistent owner\" on subsequent passes — deleted, not orphaned. LCM's own delete path (FieldDescription.UpdateCustomField) explicitly DeleteObjOwner's the owned StText before DeleteCustomField, whose contract requires data removal first. (5) UI caveats: FLEx's Custom Fields dialog never offers class Text, and the Text \"FullInformation\" detail layout has no `customFields` marker, so an FDAT field on Text is neither creatable/deletable in the dialog nor shown in the Info tab (contradicting PLAN §5's \"shows up in the text's Info tab\"); it must be created via IFwMetaDataCacheManaged.AddCustomField(…, OwningAtomic, destinationClass=StText). Design consequence: put one logical unit (e.g. one chart, or one row's data) per paragraph so concurrent edits to different units merge cleanly.",
+   "findings": [
+    {
+     "claim": "FLExBridge nests an owned object under a `<Custom name=\"…\">` element exactly as under a built-in owning property: the nesting service derives the property name from the name attribute, checks it against the class's cached \"AllOwning\" set, replaces each `<objsur t=\"o\">` with the owned object's element and recurses down the ownership tree.",
+     "evidence": "`var isCustomProperty = propertyElement.Name.LocalName == FlexBridgeConstants.Custom; var propName = isCustomProperty ? propertyElement.Attribute(FlexBridgeConstants.Name).Value : …; if (!owningProps.Contains(propName)) continue; … owningObjSurElements = propertyElement.Elements(Objsur).Where(objsurEl => objsurEl.Attribute(\"t\").Value == \"o\") … objsurElement.ReplaceWith(ownedElement); NestObject(isOwningSeqProp, ownedElement, classData, guidToClassMapping);` with `owningProps = MetadataCache.MdCache.PropertyCache[className][\"AllOwning\"]`.",
+     "source": "flexbridge/src/LibFLExBridge-ChorusPlugin/DomainServices/CmObjectNestingService.cs:108-141",
+     "confidence": "high",
+     "critical": true,
+     "implication": "A custom OwningAtomic StText field on Text is serialised in the split as `<Text><Custom name=\"FDAT data\"><StText guid=…><Paragraphs><ownseq class=\"StTxtPara\" guid=…><Contents><Str>…` — the same tree shape as built-in Text.Contents — so the JSON paragraphs are visible to Chorus as structured elements, not opaque text."
+    },
+    {
+     "claim": "The \"AllOwning\" property cache includes custom properties: custom props are added to a class's direct properties and ResetCaches recomputes _allOwningProperties from all properties whose DataType is OwningAtomic/OwningCollection/OwningSequence; the cache is built only for concrete classes.",
+     "evidence": "`_allOwningProperties.AddRange(from prop in _allProperties where prop.DataType == DataType.OwningAtomic || … OwningCollection || … OwningSequence select prop)` after `_allProperties.AddRange(_directProperties)`; `AddCustomPropInfo` does `_classes[className].AddProperty(propInfo)`; CacheProperties iterates `AllConcreteClasses`.",
+     "source": "flexbridge/src/LibFLExBridge-ChorusPlugin/Infrastructure/FdoClassInfo.cs:51-54,165-207; flexbridge/src/LibFLExBridge-ChorusPlugin/Infrastructure/MetadataCache.cs:40-88,447-452",
+     "confidence": "high",
+     "critical": true,
+     "implication": "Declaring the field on the concrete class `Text` (which is `abstract=\"false\"`) guarantees the nesting/flattening code treats it as owning."
+    },
+    {
+     "claim": "LCM writes the custom-field definition with the abbreviated type code `type=\"OA\"` for OwningAtomic (plus `destclass`), and FLExBridge converts it to `OwningAtomic` (via AdjustedPropertyType) when it writes FLExProject.CustomProperties during the split, before any rt records are cached; so `FdoPropertyInfo.DataType` (an Enum.Parse of the stored type) resolves to DataType.OwningAtomic both at split time and at merge time.",
+     "evidence": "LCM: `case CellarPropertyType.OwningAtomic: retval = \"OA\"` and `new XAttribute(\"type\", GetFlidTypeAsString(…)), (m_destinationClass != 0) ? new XAttribute(\"destclass\", …)`. FLExBridge: `var adjustedTypeValue = MetadataCache.AdjustedPropertyType(typeAttr.Value); if (adjustedTypeValue != typeAttr.Value) typeAttr.Value = adjustedTypeValue; … mdc.AddCustomPropInfo(className, customProp); … mdc.ResetCaches();`; splitter: `if (foundOptionalFirstElement) { FileWriterService.WriteCustomPropertyFile(mdc, pathRoot, record); … } else { CacheDataRecord(...) }`; `case OA: adjustedType = OwningAtomic`; `DataType { … OwningAtomic, … }`; `DataType => (DataType)Enum.Parse(typeof(DataType), _allPropertyValues[\"type\"])`.",
+     "source": "liblcm/src/SIL.LCModel/Infrastructure/Impl/BackendProvider.cs:316-318; liblcm/src/SIL.LCModel/Infrastructure/Impl/XMLBackendProvider.cs:557-566; flexbridge/src/LibFLExBridge-ChorusPlugin/DomainServices/FileWriterService.cs:143-171; flexbridge/src/LibFLExBridge-ChorusPlugin/DomainServices/FLExProjectSplitter.cs:107-118; flexbridge/src/LibFLExBridge-ChorusPlugin/Infrastructure/MetadataCache.cs:548-576; flexbridge/src/LibFLExBridge-ChorusPlugin/Infrastructure/DataType.cs:9-20; flexbridge/src/LibFLExBridge-ChorusPlugin/Infrastructure/FdoPropertyInfo.cs:29",
+     "confidence": "high",
+     "critical": true,
+     "implication": "No special handling is needed for the owning variant; the type mapping that makes nesting/merge see the field as owning is already in place for the built-in Multiparagraph-text custom field type."
+    },
+    {
+     "claim": "During merge, FLExBridge re-registers custom-property definitions from FLExProject.CustomProperties (skipping unknown classes) before building merge strategies; the TextCorpus (.textincorpus) handler passes addCustomPropertyInformation=true.",
+     "evidence": "`foreach (var customFieldElement in doc.Element(AdditionalFieldsTag).Elements(CustomField)) { … if (!_classes.TryGetValue(className, out classInfo)) continue; … AddCustomPropInfo(className, new FdoPropertyInfo(customFieldElement)); } ResetCaches();` and `public void Do3WayMerge(MetadataCache mdc, MergeOrder mergeOrder) { FieldWorksCommonFileHandler.Do3WayMerge(mergeOrder, mdc, true); }` / `if (addCustomPropertyInformation) mdc.AddCustomPropInfo(mergeOrder); // NB: Must be done before FieldWorksCommonMergeStrategy is created`.",
+     "source": "flexbridge/src/LibFLExBridge-ChorusPlugin/Infrastructure/MetadataCache.cs:463-506; flexbridge/src/LibFLExBridge-ChorusPlugin/Handling/Linguistics/TextCorpus/TextCorpusFileTypeHandlerStrategy.cs:63-66; flexbridge/src/LibFLExBridge-ChorusPlugin/Handling/FieldWorksCommonFileHandler.cs:57-69",
+     "confidence": "high",
+     "critical": false,
+     "implication": "The merge of Text files knows about the custom owning field, so its per-class strategies (including for the nested StText) are generated with the custom prop present."
+    },
+    {
+     "claim": "CmObjectValidator accepts a `<Custom>` element with a nested owned child: it resolves the property by the name attribute, dispatches on the property's DataType, and for OwningAtomic calls ValidateOwningAtomicProperty with isCustomProperty=true, which skips the 'no attributes' check, rejects more than one child, and validates the single child as a CmObject. The two-attribute rule (BasicValueTypeAttributeCheckIsValid) only applies to basic value types.",
+     "evidence": "`var isCustomProperty = propertyElement.Name.LocalName == FlexBridgeConstants.Custom; var propertyName = isCustomProperty ? propertyElement.Attribute(Name).Value : …; if (!allPropertyNames.Contains(propertyName)) return … \"Not a property element child\"; … case DataType.OwningAtomic: result = ValidateOwningAtomicProperty(mdc, isCustomProperty, propertyElement, nextIndentationLevel);` and `if (!isCustomProperty && propertyElement.HasAttributes) return \"Has unrecognized attribute(s)\"; var children = propertyElement.Elements().ToList(); return (children.Count > 1) ? \"Has too many child elements\" : ((children.Count == 0) ? null : ValidateObject(mdc, children[0], indentation));`; `BasicValueTypeAttributeCheckIsValid … if (isCustomProperty) { if (element.Attributes().Count() != 2) …`.",
+     "source": "flexbridge/src/LibFLExBridge-ChorusPlugin/DomainServices/CmObjectValidator.cs:83-114,592-604,671-696",
+     "confidence": "high",
+     "critical": true,
+     "implication": "A Text file containing `<Custom name=\"FDAT data\"><StText …>` passes FLExBridge validation (the nested StText/StTxtPara are validated recursively like any object), so Send/Receive will not reject the file."
+    },
+    {
+     "claim": "Flattening (rebuilding the .fwdata from the split) has an explicit branch for custom owning properties: it removes the nested child, flattens it recursively, and restores an `<objsur t=\"o\">` under the `<Custom>` element.",
+     "evidence": "`if (isCustomProperty) { var owningPropertyElement = (element.Elements().Where(customNode => customNode.Name.LocalName == Custom && … == propertyElement.Attribute(Name).Value)).First(); ownedElement.Remove(); FlattenObjectCore(pathname, sortedData, ownedElement, elementGuid); // BEFORE we make the objsur! BaseDomainServices.RestoreObjsurElement(owningPropertyElement, ownedElement); }` → `AddObjSurElement(parentProperty, ownedElement)` → `CreateObjSurElement(guid)`.",
+     "source": "flexbridge/src/LibFLExBridge-ChorusPlugin/DomainServices/CmObjectFlatteningService.cs:101-146; flexbridge/src/LibFLExBridge-ChorusPlugin/Contexts/BaseDomainServices.cs:96-108",
+     "confidence": "high",
+     "critical": false,
+     "implication": "The round trip fwdata → split → fwdata preserves the custom OA StText; LCM then reloads it via `customPropertyElement.Element(\"objsur\")` (CmObject.cs load path)."
+    },
+    {
+     "claim": "LCM serialises/loads an owning-atomic custom property value as `<Custom name=\"…\"><objsur guid=\"…\" t=\"o\"/></Custom>` in the owner's rt element; the owned StText is its own rt with ownerguid=Text.",
+     "evidence": "Write: `case CellarPropertyType.OwningAtomic: case ReferenceAtomic: var id = (ICmObjectOrId)data; id.Id.ToXMLString(dataType == CellarPropertyType.OwningAtomic, writer);` Load: `case OwningAtomic: case ReferenceAtomic: myElement = customPropertyElement.Element(\"objsur\"); if (myElement != null) data = surrRepos.GetId(myElement);`.",
+     "source": "liblcm/src/SIL.LCModel/DomainImpl/CmObject.cs:3076-3079,3133-3137,3196-3201,3274-3278",
+     "confidence": "high",
+     "critical": false,
+     "implication": "The on-disk shape that FLExBridge's nesting code expects (`objsur` with `t=\"o\"` under `<Custom>`) is exactly what LCM writes."
+    },
+    {
+     "claim": "An existing FLExBridge test fixture uses precisely this shape — a Data Notebook record with a custom multiparagraph field nested as `<Custom name='Like'><StText guid=…><Paragraphs><ownseq class='StTxtPara' …>` — and the context generator labels changes inside it as `Custom Field \"Like\"`.",
+     "evidence": "`<RnGenericRec guid='29fb1310-…'> … <Custom name='Like'> <StText guid='f0b19053-…'> <Paragraphs> <ownseq class='StTxtPara' guid='4125c1ed-…'> <StyleRules>…` and `Assert.That(descriptor.DataLabel, Is.EqualTo(\"Data Notebook Record \\\"Type\\\" Custom Field \\\"Like\\\"\"));`; label built by `label += Space + Resources.kCustomFieldLabel + Space + Quote + displayName + Quote;`.",
+     "source": "flexbridge/src/LibFLExBridge-ChorusPluginTests/Handling/Common/StyleContextGeneratorTests.cs:76-111; flexbridge/src/LibFLExBridge-ChorusPlugin/Handling/Common/StyleContextGenerator.cs:84-88",
+     "confidence": "high",
+     "critical": false,
+     "implication": "Custom OA StText fields are an already-supported, production shape in FLExBridge (FLEx's Notebook 'Multiparagraph text' custom fields), not a novel path; only the owner class (Text instead of RnGenericRec) differs, and the nesting/merge code is class-generic. No test exercises a full 3-way merge of such a field, though."
+    },
+    {
+     "claim": "Merge strategy for the custom property element: keyed by the `name` attribute (not the singleton finder), NumberOfChildren = ZeroOrOne, not atomic; registered under key `Custom_<Class>_<name>`. The key mapper derives `Custom_Text_<name>` from the `<Custom>` element's parent element name.",
+     "evidence": "`var propStrategy = isCustom ? CreateStrategyForKeyedElement(FlexBridgeConstants.Name, false) : CreateSingletonElementStrategy(); switch (propertyInfo.DataType) { case DataType.OwningAtomic: propStrategy.NumberOfChildren = NumberOfChildrenAllowed.ZeroOrOne; break; …} strategiesForMerger.SetStrategy(String.Format(\"{0}{1}_{2}\", isCustom ? \"Custom_\" : \"\", classInfo.ClassName, propertyInfo.PropertyName), propStrategy);` / mapper: `case \"Custom\": var customPropName = element.Attributes[\"name\"].Value; var className = element.ParentNode.Name; … combinedCustomKey = key + \"_\" + className + \"_\" + customPropName;`. Test asserts for every OwningAtomic prop incl. custom: `Assert.IsFalse(elementStrategy.IsAtomic); … Assert.AreEqual(NumberOfChildrenAllowed.ZeroOrOne, …)`.",
+     "source": "flexbridge/src/LibFLExBridge-ChorusPlugin/DomainServices/FieldWorksMergeServices.cs:208-223,321-323; flexbridge/src/LibFLExBridge-ChorusPlugin/Handling/FieldWorksElementToMergeStrategyKeyMapper.cs:47-55; flexbridge/src/LibFLExBridge-ChorusPluginTests/Handling/ReportsByDataType/OwningAtomicDataTypeReportTests.cs:51-61",
+     "confidence": "high",
+     "critical": true,
+     "implication": "The `<Custom>` wrapper itself is not an atomic merge unit; Chorus descends into the nested StText."
+    },
+    {
+     "claim": "Inside the nested StText the merge is element-level: the `<StText guid>` child maps to the StText class strategy (GUID-keyed, non-atomic — every concrete class gets `MergePartnerFinder = GuidKeyFinder, IsAtomic = false` per chart-anchors 5.4), `Paragraphs` (OwningSequence) gets SignificantOrderPolicy, each `<ownseq>` StTxtPara is matched by guid, `Contents` (String) is ZeroOrOne child, and only the `<Str>` element is atomic. Hence the JSON merges per paragraph, order-significant, not as one string.",
+     "evidence": "Mapper: class elements `element.Attributes[GuidStr] != null && keys.Contains(key)` → key = element name (\"StText\"); property elements → `element.ParentNode.Name + \"_\" + key` (e.g. \"StText_Paragraphs\", \"StTxtPara_Contents\"); ownseq children → `element.ParentNode.Attributes[\"class\"].Value + \"_\" + key`. Strategies: `case DataType.OwningSequence: … else { propStrategy.ChildOrderPolicy = new SignificantOrderPolicy(); }`; `case DataType.String: // Contains one <Str> element propStrategy.NumberOfChildren = ZeroOrOne;`; `elementStrategy = AddSharedSingletonElementType(sharedElementStrategies, FlexBridgeConstants.Str, false); elementStrategy.IsAtomic = true; // TsStrings are atomic`; `ownseq` strategy `CreateStrategyForKeyedElement(GuidStr, true)` with OwnSeqPremerger.",
+     "source": "flexbridge/src/LibFLExBridge-ChorusPlugin/Handling/FieldWorksElementToMergeStrategyKeyMapper.cs:29-46; flexbridge/src/LibFLExBridge-ChorusPlugin/DomainServices/FieldWorksMergeServices.cs:224-236,296-298,357-372; liblcm/src/SIL.LCModel/MasterLCModel.xml:483,517",
+     "confidence": "high",
+     "critical": true,
+     "implication": "PLAN §5 item 1 and §7 ('Chorus merges it as one string: concurrent edits … conflict wholesale') are wrong for the OA-StText ('Multiparagraph text') variant; they describe a String/Unicode custom field. With an StText, the conflict unit is a single paragraph's `<Str>`; two users editing different paragraphs merge cleanly, and paragraph insert/delete merges by GUID with order significance. FDAT should therefore write one logical unit per StTxtPara (e.g. paragraph 1 = header/version, one paragraph per chart or per row) rather than one giant JSON string, and must tolerate paragraphs arriving in a merged/ordered set."
+    },
+    {
+     "claim": "The Text object and everything it owns (including a custom-owned StText) are written to one file, Linguistics/TextCorpus/Text_<guid>.textincorpus, by a generic NestObject call on the Text element.",
+     "evidence": "`foreach (var textGuid in texts.Keys.ToArray()) { var rootElement = new XElement(\"TextInCorpus\"); var textElement = …; CmObjectNestingService.NestObject(false, textElement, classData, guidToClassMapping); FileWriterService.WriteNestedFile(Path.Combine(textCorpusBaseDir, \"Text_\" + textGuid.ToLowerInvariant() + \".\" + FlexBridgeConstants.TextInCorpus), rootElement); }`; class comment: 'The Text instances … including all they own are stored in the TextCorpus folder.'",
+     "source": "flexbridge/src/LibFLExBridge-ChorusPlugin/Contexts/Linguistics/TextCorpus/TextCorpusBoundedContextService.cs:18-25,86-100",
+     "confidence": "high",
+     "critical": false,
+     "implication": "FDAT data stored on Text syncs in the same file as the text's baseline/segments; it is separate from Linguistics/Discourse/Charting.discourse where the DsConstChart lives, so chart-row GUID references inside the JSON are cross-file references (plain text in the JSON, not objsur links, so FLExBridge/FixFwData will not validate or repair them)."
+    },
+    {
+     "claim": "If the custom-field definition is removed but `<Custom>` data remains, FixFwData's CustomPropertyFixer deletes the undefined `<Custom>` element (and thus its owning objsur) from the owner rt, keyed by name + rt class.",
+     "evidence": "'If two users are doing Send/Receive and one deletes a Custom Field … Chorus will keep the edit, but we have no way to recreate the custom field, so delete the (now) undefined custom property.' `foreach (var kvp in customProperties) { if (… m_customFieldNames.ContainsKey(kvp.Key)) continue; logger(String.Format(Strings.ksRemovingUndefinedCustomProperty, …), true); kvp.Value.Remove(); }` with key `nameKey + \"_\" + ownerClassAttr.Value` from `customProp.Parent.Attribute(\"class\")`.",
+     "source": "liblcm/src/SIL.LCModel.FixData/CustomPropertyFixer.cs:11-15,40-54,56-80",
+     "confidence": "high",
+     "critical": false,
+     "implication": "Removing the field definition on one machine while another machine still has data leads FixFwData to strip the data; the StText is then no longer referenced from the Text."
+    },
+    {
+     "claim": "The stripped StText is not left orphaned: FwDataFixer iterates up to 20 passes (re-initialising ownership info each pass) until no new fixes occur; on the next pass OriginalFixer sees the StText's ownerguid pointing at an existing Text that no longer owns it and deletes it as a 'disowned object'; on subsequent passes its StTxtPara/Segment rts are deleted as 'object with nonexistent owner'.",
+     "evidence": "Loop: `for (int repeatCount = 0; repeatCount < 20; ++repeatCount) { … if (repeatCount > 0) { InitializeFixers(infile); …} … if (newErrorCount == currentErrorCount) break; // If no errors were fixed on this pass, we can quit.` with comment 'comfortably larger than any iteration we expect (maximum ownership chain depth + 1)' and 'Any deleting of owned objects requires two passes'. Ownership map built from all `objsur[@t='o']` descendants (`foreach (var objsur in rt.Descendants(\"objsur\")) { … if (xaType.Value != \"o\") continue; … m_owners.Add(guidObj, guid); }`). OriginalFixer: `if (guidOwner != storedOwner) { if (!storedOwner…Empty && m_guids.Contains(storedOwner)) {…rewrite…} else if (!m_guids.Contains(guidOwner)) { errorLogger(ksRemovingObjectWithBadOwner …); return false; } else { errorLogger(ksRemovingDisownedObject …); return false; } }`. Strings: 'Removing disowned object (invalid ownerguid=…)', 'Removing object with nonexistent owner …'.",
+     "source": "liblcm/src/SIL.LCModel.FixData/FwDataFixer.cs:63-66,138-147,172-176,199-204,236-263,355-384; liblcm/src/SIL.LCModel.FixData/Strings.resx:135-139",
+     "confidence": "high",
+     "critical": true,
+     "implication": "Answer to the cleanup question: CustomPropertyFixer + OriginalFixer delete the whole owned StText tree over successive passes; nothing is orphaned. This is inferred from the pass structure (fixer order OriginalFixer→CustomPropertyFixer within a pass means the deletion happens on pass 2/3), not from a dedicated test."
+    },
+    {
+     "claim": "LCM's own deletion path for a custom field (FieldDescription.UpdateCustomField with delete) explicitly deletes the owned object of an OwningAtomic custom field before removing the definition, and DeleteCustomField documents that all data must be removed first.",
+     "evidence": "`// delete all owned objects for this custom field if it is being deleted if (m_doDelete) { switch (m_type) { case CellarPropertyType.OwningAtomic: { int hvo = sda.get_ObjectProp(obj.Hvo, m_id); if (hvo > 0) sda.DeleteObjOwner(obj.Hvo, hvo, m_id, 0); } break; …` then `if (m_doDelete) mdc.DeleteCustomField(m_id);`; `/// All of the data for this field should be removed before calling this method!` on DeleteCustomField.",
+     "source": "liblcm/src/SIL.LCModel/FieldDescription.cs:355-388; liblcm/src/SIL.LCModel/Infrastructure/Impl/LcmMetaDataCache.cs:1010-1030",
+     "confidence": "high",
+     "critical": false,
+     "implication": "If FDAT ever offers 'remove FDAT data from this project', it must delete each Text's owned StText (DeleteObjOwner / delete the StText) inside a UOW before calling IFwMetaDataCacheManaged.DeleteCustomField, mirroring FieldDescription."
+    },
+    {
+     "claim": "FLEx's Custom Fields dialog never lists class Text as a location (only LexEntry/LexSense/LexExampleSentence/MoForm, Segment, RnGenericRec), and it offers 'Multiparagraph text' (= OwningAtomic with DstCls StText) only outside the Interlinear area. So a custom OA StText field on Text cannot be created, seen or deleted through FLEx's dialog; it must be created via LCM (AddCustomField with fieldType OwningAtomic, destinationClass StText).",
+     "evidence": "`case LocationType.Interlinear: m_locationComboBox.Items.Add(new IdAndString<int>(SegmentTags.kClassId, \"Segment\")); break; case LocationType.Notebook: … RnGenericRecTags.kClassId …`; `// Additional custom field types are valid if we are not in the text and words area if (locationType != LocationType.Interlinear) { m_typeComboBox.Items.Add(… CustomFieldType.MultiparagraphText …)`; `case CustomFieldType.MultiparagraphText: fd.Type = CellarPropertyType.OwningAtomic; fd.DstCls = StTextTags.kClassId;`; LCM: `AddCustomField(string className, string fieldName, CellarPropertyType fieldType, int destinationClass)` with only `CheckClid(className)` (chart-anchors 3.1).",
+     "source": "FieldWorks/Src/xWorks/AddCustomFieldDlg.cs:112-128,137-142,411-413; liblcm/src/SIL.LCModel/Infrastructure/Impl/LcmMetaDataCache.cs:920-935",
+     "confidence": "high",
+     "critical": false,
+     "implication": "PLAN §5's 'Verify … that the installed FieldWorks version offers custom fields on Text' will fail at the UI level but succeed at the LCM level; users cannot remove the field from FLEx, so FDAT should own its lifecycle."
+    },
+    {
+     "claim": "The Text 'FullInformation' detail layout (the interlinear Info tab) contains no `customFields` marker, and DataTree only generates custom-field slices where a part carries a `customFields` attribute (present only in LexEntry, LexSense, Morphology and Notebook layouts). Therefore a custom field on Text is not displayed in the Info tab at all — it is invisible in FLEx, not 'an opaque JSON block'.",
+     "evidence": "`<layout class=\"Text\" type=\"detail\" name=\"FullInformation\"> <part ref=\"TitleAllWs\"/> … <part ref=\"NotebookSection\" …>` (no customFields attribute; grep count 0). DataTree: `// This code looks for the a special part definition with an attribute called \"customFields\" … If this attribute is found, the custom fields will not be generated. if (XmlUtils.GetOptionalAttributeValue(partRef, \"customFields\", null) != null) { if(!isTestOnly) EnsureCustomFields(obj, template, partRef); …}`; files containing the marker: LexSense.fwlayout, LexEntry.fwlayout, Morphology.fwlayout, Notebook.fwlayout only.",
+     "source": "FieldWorks/DistFiles/Language Explorer/Configuration/Parts/Cellar.fwlayout:62-77; FieldWorks/Src/Common/Controls/DetailControls/DataTree.cs:2309-2325,2487-2531",
+     "confidence": "high",
+     "critical": false,
+     "implication": "Contradicts PLAN §5 item 1 ('The field shows up in the text's Info tab as an opaque JSON block (name it clearly and put it last)'); the ordering/naming advice is moot, and users get no in-FLEx visibility or accidental-edit risk. Inferred from the shipped layout; a user-customised layout could differ."
+    },
+    {
+     "claim": "The built-in model analog is identical in shape: Text.Contents is `<owning … id=\"Contents\" card=\"atomic\" sig=\"StText\"/>`, StText.Paragraphs is an owning sequence of StPara, and StTxtPara.Contents is a `String` (TsString) — the same classes the custom field would own, so every merge/fix rule above is exercised daily by ordinary texts.",
+     "evidence": "MasterLCModel: `<class num=\"54\" id=\"Text\" abstract=\"false\" … base=\"CmMajorObject\">`, `<owning num=\"8\" id=\"Contents\" card=\"atomic\" sig=\"StText\"/>`; `<owning num=\"1\" id=\"Paragraphs\" card=\"seq\" sig=\"StPara\"/>`; `<basic num=\"2\" id=\"Contents\" sig=\"String\">`; `<owning num=\"6\" id=\"Segments\" sig=\"Segment\" card=\"seq\"/>`.",
+     "source": "liblcm/src/SIL.LCModel/MasterLCModel.xml:478-483,505-543,3880-3883",
+     "confidence": "high",
+     "critical": false,
+     "implication": "Storing JSON in StTxtPara.Contents stays entirely within FLEx's own data model; nothing new is introduced for FLExBridge, FixFwData or data migrations."
+    },
+    {
+     "claim": "The CustomProperties definition file validator requires only name/class/type(+key) and accepts destclass as an optional attribute, so an OwningAtomic definition with destclass=StText's class id validates.",
+     "evidence": "`var requiredAttrs = new HashSet<string> { \"name\", \"class\", \"type\", Key }; var optionalAttrs = new HashSet<string> { \"destclass\", \"wsSelector\", \"helpString\", \"listRoot\", \"label\" };`",
+     "source": "flexbridge/src/LibFLExBridge-ChorusPlugin/Handling/CustomProperties/CustomPropertiesTypeHandlerStrategy.cs:50-80",
+     "confidence": "high",
+     "critical": false,
+     "implication": "No validation obstacle for the definition itself."
+    }
+   ],
+   "openQuestions": [
+    "No FLExBridge test performs a full 3-way merge or split/flatten round trip of a custom OwningAtomic StText (only a context-generator fixture and generic per-datatype strategy assertions exist); the per-paragraph merge behaviour is derived from code paths and should be confirmed in the Phase 0 two-machine Send/Receive test (edit different paragraphs on each machine, then the same paragraph, and observe conflict granularity).",
+    "The FixFwData cleanup sequence (CustomPropertyFixer strips `<Custom>` in pass N, OriginalFixer removes the disowned StText in pass N+1 and its paragraphs/segments in N+2/N+3) is inferred from the multi-pass loop and fixer order, not from a test; verify by deleting the definition on one machine and running FixFwData on a copy that still has data.",
+    "Whether flexlibs' FLExProject exposes IFwMetaDataCacheManaged.AddCustomField with an OwningAtomic type and destinationClass (StText) — the plan needs that call from Python; not examined here.",
+    "Whether LCM's paragraph/segment machinery (StTxtPara.ParseIsCurrent, Segments, ParagraphParser) ever touches an StText that is owned by a custom field rather than Text.Contents; likely inert since interlinear views only load Text.Contents, but unverified.",
+    "Practical size limits of a single TsString run (`<Str><Run ws=…>`) holding a JSON paragraph, and whether JSON characters (quotes, braces) survive TsString normalisation (NFD) and XML escaping unchanged — relevant if FDAT stores GUID-keyed JSON per paragraph.",
+    "Custom field names containing spaces (the plan's \"FDAT data\") are accepted by LcmMetaDataCache.AddCustomField (only uniqueness is checked) and used verbatim as merge keys; confirm FLEx tolerates such a name on Text since the dialog never sees it."
+   ]
   }
  }
 }
