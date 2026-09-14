@@ -170,8 +170,22 @@ deletes every field that references it. That is what the backup below is for.
   and shows a diff first** — a colleague's backup may be older than the project's own data. Store
   row re-anchoring keys (label, first word group's begin-segment GUID and analysis index, column
   GUID) beside the row GUIDs, or a restore will not survive a re-chart.
+- **View settings** — the one kind of FDAT data with no home in the model, so it lives in the same
+  per-peer JSON: `LinkedFiles/Others/fdat/<peerId>.settings.json`, keyed by chart GUID where
+  per-chart. Per-peer filenames suit it exactly, since column widths and collapsed panels are
+  personal: each contributor keeps their own, no file is ever merged, and every other FDAT install
+  can still *read* them, so "adopt the settings a colleague is using" is possible as an explicit
+  action. Keep the working copy in FDAT's local app-data and mirror it into the project file, so
+  FDAT still works when LinkedFiles has been relocated and syncs nothing. Throttle those writes —
+  everything committed stays in Mercurial history for the whole team, so debounce rather than
+  writing on every column drag.
+- Never auto-apply another peer's file, settings or backup: both are offered explicitly, neither
+  overrides what is already here.
 - Write order on save: custom fields through LCM first, `Save()`, then the backup, so a backup can
   never claim state the project never had.
+- The model stays the store of record. If a piece of data can live in a custom field, a marker
+  possibility or the list hierarchy, it should — that is the only tier where two people's edits
+  genuinely combine (addendum 9).
 
 ### Data-model safety rules
 
