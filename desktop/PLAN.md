@@ -132,6 +132,18 @@ Two sync-safe options for the per-row free text and the chart-level settings; bo
 
 Language-level preferences that are not per-marker (for example a default display preset) can live in the same JSON on a designated notebook record, or simply be repeated per text; do not build a third mechanism for them.
 
+### Data-model safety rules
+
+Storing data in the project must never put the project at risk. These rules are binding for every phase:
+
+1. **Only FLEx's own extension points.** Custom fields (created through LCM's metadata API, exactly as FLEx's "Custom Fields" dialog does), possibility lists and sub-lists, and `TextTag`s. No new classes, no changes to the model or its version, and no repurposing of a field for something FLEx would misread. In particular, do **not** put non-marker possibilities into `ConstChartTag.TagRA` (FLEx's chart UI assumes the Chart Markers list); use `TextTag` for bands.
+2. **All writes go through LCM**, inside a unit of work (flexlibs' `writeEnabled=True` path), never by editing `.fwdata` XML or FLExBridge's split files. LCM validates ownership and references, keeps the object cache consistent and writes the file atomically; hand-editing does none of that.
+3. **Read-only by default.** The sidecar opens projects read-only; write mode is entered only for an explicit save action and released afterwards. Never write while FLEx has the project open unless the shared backend is confirmed to support it (§7).
+4. **FDAT only touches what FDAT created**, plus the one FLEx-owned field the user explicitly edits in FDAT (`ConstChartRow.Notes`). FDAT-created objects are recognisable (list named "FDAT Salience Bands", custom field named "FDAT data", tags referencing FDAT's own list). Nothing FLEx or the user created is deleted, reordered or renamed by FDAT.
+5. **Reversible.** Ship "Remove FDAT data from this project", which deletes only the objects in rule 4 through LCM, so a project can be returned to its pre-FDAT state.
+6. **Backups and checks around every write path during development.** Test on a copy of a project (FLEx's sample project first), take a FLEx backup before the first write in a session, and after write tests open the project in FLEx and run its data integrity check (`FixFwData`) to confirm it is clean. Phase 2's exit criterion includes both, plus a two-machine Send/Receive round trip.
+7. **Version-tolerant.** FDAT data carries a `version` and FDAT refuses to write to a project whose FieldWorks data version it has not been tested with, rather than guessing.
+
 ### Consequences for the code
 
 - The renderer's settings panels keep their UI but read/write through `window.fdatHost` (`getAnnotations` / `putAnnotations` become "read the native objects + the JSON remainder" / "write back"), keyed by `data-row-guid` / `data-guid` instead of row labels and index-based registries.
@@ -162,7 +174,7 @@ Language-level preferences that are not per-marker (for example a default displa
 - Row notes write-back (`setRowNotes`), with a "project is open in FLEx" guard and explicit "saved to project" feedback.
 - Confirm with a second machine that a full round of annotations survives Send/Receive in both directions.
 - Remove the language/genre/document hierarchy and settings import/export from the desktop build (the split described in §3).
-- Exit criterion: annotations survive re-charting in FLEx (rows moved/merged) and a project rename.
+- Exit criterion: annotations survive re-charting in FLEx (rows moved/merged) and a project rename; after a full annotation round, FLEx opens the project without complaint, `FixFwData` reports nothing, and a two-machine Send/Receive round trip reproduces the annotations on the other machine.
 
 ### Phase 3 — polish and decide the web app's future
 
