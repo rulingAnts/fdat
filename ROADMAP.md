@@ -130,6 +130,16 @@ Implementation notes
 
 ---
 
+## Watch item: browser XSLT
+
+The viewer renders by running the XSL in the browser (`XSLTProcessor`, `docs/app.js`). Chromium has an
+active intent to remove `XSLTProcessor` and `<?xml-stylesheet?>`; if that ships, the viewer stops
+rendering in Chrome/Edge with no code change on our side. `docs/app.js` already detects a missing
+`XSLTProcessor` and shows a message instead of failing silently, so the failure mode is at least
+legible. Options when it becomes real, cheapest first: transform with a JS XSLT implementation
+(`xslt-processor`, or SaxonJS for XSLT 3.0), or port the stylesheet to a JS transform over the parsed
+XML. The desktop app avoids this entirely by transforming in its Python host (`desktop/PLAN.md` §2).
+
 ## Nice‑to‑have (after the above)
 
 - Export presets: Named presets capturing chart display settings (headers, notes, marker order/styles, salience display, custom fields) for quick reuse.

@@ -16,44 +16,46 @@ What that buys:
 What it costs:
 
 - Windows only, with FieldWorks installed (LCM loads the installed FieldWorks assemblies). Mac/Linux users keep the web app for exported XML.
-- A second process (the LCM host) that has to be packaged and supervised.
+- A Python runtime to package, whose architecture (32/64-bit) must match the installed FieldWorks.
 - Concurrency rules with a running FLEx (see §7).
 
 ## 2. Architecture
 
 ```
-┌────────────────────────────── FDAT Desktop (Electron) ───────────────────────────────┐
-│                                                                                        │
-│  main process                          renderer (BrowserWindow, contextIsolation)      │
-│  ┌──────────────────────────┐          ┌──────────────────────────────────────────┐   │
-│  │ app:// scheme → serves   │          │ existing chart renderer (index.html +    │   │
-│  │ the bundled renderer     │◄────────►│ app.js + XSL), plus host-glue.js which   │   │
-│  │ sidecar supervisor       │  IPC     │ adds "Open from FLEx" and calls          │   │
-│  │ (spawn, restart, RPC)    │          │ window.fdatHost.* via the preload bridge │   │
-│  └───────────┬──────────────┘          └──────────────────────────────────────────┘   │
-│              │ JSON-RPC over stdio (newline-delimited JSON)                            │
-└──────────────┼─────────────────────────────────────────────────────────────────────────┘
+┌──────────────────── FDAT Desktop — one Python process (pywebview) ─────────────────────┐
+│                                                                                          │
+│  Python host                                    WebView2 window                          │
+│  ┌───────────────────────────────────┐         ┌────────────────────────────────────┐   │
+│  │ localhost HTTP server serving the │────────►│ existing chart renderer            │   │
+│  │ bundled renderer                  │         │ (index.html + app.js + XSL), plus  │   │
+│  │ FdatApi — the bridge methods      │◄────────│ host-glue.js, which adds "Open     │   │
+│  │ LCM worker thread (all LCM calls  │pywebview│ from FLEx" and calls               │   │
+│  │ serialised onto it)               │ bridge  │ window.fdatHost.*                  │   │
+│  └───────────┬───────────────────────┘         └────────────────────────────────────┘   │
+└──────────────┼───────────────────────────────────────────────────────────────────────────┘
+               │ in-process, through pythonnet
                ▼
    ┌──────────────────────────────┐        ┌──────────────────────────────┐
-   │ LCM sidecar (Python +        │  LCM   │ FieldWorks project           │
-   │ flexlibs 2.x + pythonnet)    │◄──────►│ (.fwdata / shared XML)       │
-   │ list projects / charts,      │        │ + FDAT data stored in the    │
-   │ export chart, write back     │        │   project, synced by S/R (§5)│
+   │ flexlibs 2.x → LCM           │  LCM   │ FieldWorks project           │
+   │ (`sidecar/fdat_lcm.py`,      │◄──────►│ (.fwdata / shared XML)       │
+   │ imported rather than spawned)│        │ + FDAT data stored in the    │
+   │ charts, export, write-back   │        │   project, synced by S/R (§5)│
    └──────────────────────────────┘        └──────────────────────────────┘
 ```
 
 Key choices and why:
 
-- **Renderer = the existing web app, bundled locally.** `docs/index.html`, `docs/app.js` and the XSL already render charts from XML and apply settings as DOM augmentation. The shell serves them from an `app://` scheme (Chromium refuses `fetch()` of `file://` URLs, so the XSL load needs a real scheme). Nothing is loaded from the network, so the preload bridge can safely expose privileged calls; the current online-PWA shell deliberately exposes none.
-- **LCM host = Python sidecar using flexlibs.** flexlibs is the proven way to drive LCM from outside FLEx (FLExTools is built on it): it locates the installed FieldWorks, initialises LCM, and opens projects. The alternative is a small C# host referencing the installed FieldWorks assemblies; it removes the Python runtime from the package but means writing and shipping .NET code. Start with Python; the JSON-RPC boundary makes the host swappable.
-- **Electron over Tauri, for now.** The existing shell is Electron, spawning and supervising a child process is trivial, and packaging on Windows is known. Tauri (Rust host, WebView2) would produce a smaller binary and has first-class "sidecar" support; it is a reasonable later switch because the renderer and the sidecar do not care which shell hosts them.
-- **Transport = JSON-RPC 2.0, one JSON object per line on stdin/stdout.** Simple to debug (`echo '{"jsonrpc":"2.0","id":1,"method":"listProjects"}' | python fdat_lcm.py serve`), no ports, no CORS.
+- **Python is the host process, not a sidecar.** flexlibs is a Python library over LCM (pythonnet loading the installed FieldWorks assemblies), so the real work of this app is Python, and every FLEx-facing tool that already works — FLExTools above all — is a Python app. An Electron design would have made Node the host and given its main process only one job: spawning, supervising and speaking JSON-RPC to the Python process that does everything. Making Python the host deletes that job, the process boundary, the serialisation on every call, and a second runtime in the installer. **pywebview** is the shell: it opens a native window over WebView2 on Windows and exposes Python methods to JS as `window.pywebview.api.*`, each returning a Promise.
+- **Renderer = the existing web app, unchanged.** `docs/index.html`, `docs/app.js` and the XSL already render charts from XML and apply settings as DOM augmentation. pywebview's built-in HTTP server (`webview.start(http_server=True)`) serves the bundle from a localhost origin, which is what the XSL `fetch()` needs — the same reason the Electron design needed an `app://` scheme. `host-glue.js` is the only new renderer file, and it implements `window.fdatHost` over `window.pywebview.api`.
+- **The bridge API is the contract; the shell is not.** The method table below is written so the same renderer runs over pywebview, over Electron IPC, or over Tauri. `sidecar/fdat_lcm.py` keeps its `serve` mode (newline-delimited JSON-RPC 2.0 on stdin/stdout) even though the host now imports it directly: it stays debuggable from a terminal (`echo '{"jsonrpc":"2.0","id":1,"method":"listProjects"}' | python fdat_lcm.py serve`) and keeps a non-Python shell a drop-in swap rather than a rewrite.
+- **All LCM calls are serialised onto one worker thread.** pywebview dispatches JS→Python calls off the GUI thread, so concurrent `window.fdatHost` calls would otherwise land in LCM concurrently. LCM enforces nothing here — there is not one `ManagedThreadId` guard in `SIL.LCModel` — but it is not documented as thread-safe, and in shared mode peers coordinate through a process-wide mutex and a commit log (§7). A single-threaded sidecar process got this serialisation for free; the in-process host has to build it: one dedicated thread owning the `LcmSession`, a request queue, and every bridge method a `put`/`await`. This is the one piece of complexity the Electron design did not have, and it is much less than the process supervision it replaces.
+- **Electron and Tauri stay on the table, and one thing argues for Electron.** Chromium has an active intent to remove `XSLTProcessor`, which the renderer uses for the whole transform (`docs/app.js:2182`). Electron pins its own Chromium, so it could outlive the removal; WebView2 Evergreen updates itself and cannot be pinned. The fix is better than pinning either way: with Python already in the process, run the transform with `lxml` and hand the renderer ready HTML, which removes the browser XSLT dependency from the desktop build entirely. (The web app needs its own answer to this — see ROADMAP.)
 
-### Bridge API (renderer ↔ main ↔ sidecar)
+### Bridge API (renderer ↔ host)
 
-Exposed as `window.fdatHost` by `shell/preload.js`; every call returns a Promise.
+Exposed to the renderer as `window.fdatHost` by `host-glue.js`; every call returns a Promise. The second column is the method name on the Python side, which is also the JSON-RPC method name in `fdat_lcm.py serve`.
 
-| Method | Sidecar RPC | Notes |
+| Method | Host method | Notes |
 |---|---|---|
 | `listProjects()` | `listProjects` | Names of FieldWorks projects on this machine. |
 | `openProject(name)` | `openProject` | Opens (read-only at first). Returns writing systems and whether write access was granted. |
@@ -66,7 +68,7 @@ Exposed as `window.fdatHost` by `shell/preload.js`; every call returns a Promise
 | `setRowNotes(rowGuid, text)` | `setRowNotes` | First write-back (Phase 2). |
 | `closeProject()` | `closeProject` | Releases the LCM cache. |
 
-The renderer keeps working without a host: `host-glue.js` does nothing unless `window.fdatHost` exists, so the same bundle still runs as the web app.
+The renderer keeps working without a host: `host-glue.js` binds `window.fdatHost` only when `window.pywebview` (or an Electron preload bridge) is present, so the same bundle still runs unmodified as the web app.
 
 ## 3. What happens to the existing web-app code
 
@@ -213,12 +215,13 @@ Storing data in the project must never put the project at risk. These rules are 
 - Load `out.xml` in the web app (`npm run dev:web`, paste or pick the file). It must render like FLEx's own export of the same chart; fix the mapping in §4 until it does.
 - Confirm on a real machine what §7 says from the source: with the Sharing tab enabled the sidecar opens (and writes) while FLEx has the project open; with it disabled the open raises `FP_FileLockedError`. Also measure how long opening a large project takes, and whether an open FLEx notices an FDAT write.
 - Verify the storage assumptions in §5 on a two-machine Send/Receive: a custom field added to `Text` (definition and value) arrives on the other machine; a `TextTag` created from flexlibs shows in FLEx's Tagging view and arrives too; a small file under `LinkedFiles/Others` arrives.
-- Exit criterion: a real chart renders from LCM with `guid` attributes on rows, cells and tokens, and the storage checks above have a yes/no answer each.
+- Prove the stack in one throwaway script: a pywebview window over WebView2 serving `docs/` with `http_server=True`, one `FdatApi` method that opens the project on a dedicated thread and returns the chart list, and the renderer showing it. Two things to watch: that `fetch()` of the XSL works from the localhost origin, and that LCM survives being driven from a thread other than the one that called `FLExInitialize()` (if it does not, initialise LCM *on* the worker thread and never touch it from elsewhere).
+- Exit criterion: a real chart renders from LCM with `guid` attributes on rows, cells and tokens, the pywebview window shows it, and the storage checks above have a yes/no answer each.
 
 ### Phase 1 — desktop v1, read-only (new repository)
 
-- `shell/` from this folder as the starting point: `app://` bundle serving, sidecar supervision, `fdatHost` bridge, project/chart picker in `host-glue.js`.
-- Package: Electron app + embedded Python (python.org "embeddable" build) + `flexlibs`, `pythonnet` wheels; NSIS installer. FieldWorks must be installed separately (documented requirement; the sidecar reports a clear error otherwise).
+- Python host: pywebview window, bundled renderer over the local HTTP server, `FdatApi` on the LCM worker thread, project/chart picker in `host-glue.js`. `shell/` (Electron) stays in the repository as the fallback shell and as proof the bridge contract is shell-independent, but it is not the shipped path.
+- Package: one PyInstaller (or Nuitka) bundle — Python, `pywebview`, `flexlibs`, `pythonnet`, the renderer — plus an installer. Two hard requirements to document and detect at startup: FieldWorks installed (the host reports a clear error otherwise), and a Python architecture matching FieldWorks' (flexlibs' own README: "The Python architecture must match that of FieldWorks"). The WebView2 runtime ships with Windows 11 and is evergreen-installed on Windows 10; bundle Microsoft's bootstrapper for the machines that lack it.
 - Settings: keep the renderer's localStorage for display prefs in v1 (unchanged code), so v1 is "the web app, fed by FLEx". Ship this to real users early.
 - Exit criterion: a user opens FDAT, picks a project and chart, and gets the chart with resize/markers/export working, with no XML export step.
 
@@ -241,7 +244,9 @@ Storing data in the project must never put the project at risk. These rules are 
 
 - **Project locking — largely solved by project sharing** (verified in source; see the addendum in `research/flex-anchors/chart-anchors-report.md`). A project whose **Project Properties → Sharing** tab has "Share project contents with programs on this computer" enabled is opened through LCM's shared backend, and FDAT can read *and* write while FLEx has it open: `LcmCache.GetProviderTypeFromProjectId` promotes a plain `kXML` request to `kSharedXML` whenever `LcmSettings.IsProjectSharingEnabled(projectFolder)` is true, which is exactly the remedy flexlibs documents for `FP_FileLockedError`. Peers coordinate through a global mutex plus a memory-mapped commit log and pick up each other's changes on commit. Consequences for FDAT: (a) detect the setting at startup and, if it is off and the project is locked, show the Sharing-tab remedy instead of a raw error — never toggle it silently; (b) FDAT writes only additive, FDAT-namespaced data that the FLEx UI never renders, so FLEx has nothing to repaint; the refresh that matters runs the other way — **FLEx's chart edits must reach FDAT**, and in shared mode the only way a peer learns of foreign changes is inside a commit, so FDAT polls by calling `IUndoStackManager.Save()` with no local changes (that pulls and reconciles foreign changes before testing whether anything local needs writing) and then re-exports. This requires the session to hold **no open unit of work**, so open read-only and wrap FDAT's own writes in a short `BeginNonUndoableTask`/`EndNonUndoableTask`/`Save` window. Without sharing there is no refresh path at all: the cache is a startup snapshot and FDAT must close and reopen. See addendum 2 in `research/flex-anchors/chart-anchors-report.md`; (c) a peer that is not the "master" cannot run a data migration (`LcmDataMigrationForbiddenException`, surfaced by flexlibs as `FP_MigrationRequired`), so a project needing migration must be opened in FLEx once first; (d) the sharing setting travels with Send/Receive (`SharedSettings/*.plsx` is in FLExBridge's include patterns), so a colleague's copy keeps it.
 - **FieldWorks version coupling.** flexlibs loads the installed FieldWorks; a FieldWorks upgrade can require a flexlibs upgrade. Pin flexlibs per FieldWorks major version and detect mismatches at sidecar start.
-- **Python packaging.** Embedded Python + pythonnet is ~40 MB; acceptable. Signing the installer (already a roadmap item) matters more once a second executable is bundled.
+- **Python packaging.** One bundle of Python + pythonnet + pywebview, no second runtime. The pinned risk is the architecture match with FieldWorks, which a wrong-bitness Python fails at import time with an unhelpful error — detect it at startup and say so. Signing the installer is already a roadmap item.
+- **Browser XSLT removal.** The renderer transforms with `XSLTProcessor` (`docs/app.js:2182`), and Chromium intends to remove it. WebView2 Evergreen cannot be pinned against that. Mitigation for the desktop build: transform with `lxml` in the host and send HTML to the renderer — worth doing early, since it also drops a large synchronous job out of the UI thread. The web app needs a separate answer (a JS XSLT implementation, or pre-transforming at export).
+- **Threading at the pywebview bridge.** JS→Python calls arrive off the GUI thread, so the host must funnel them onto the single LCM thread and must not let a long `openProject` block the queue behind it. Unverified until Phase 0: whether LCM tolerates being initialised on one thread and used from another. If it does not, `FLExInitialize()` moves onto the worker thread too.
 - **Send/Receive merge granularity.** Native objects merge per element; the JSON remainder in a custom field merges as one string, so two people editing the same text's FDAT settings between syncs produces a conflict that Chorus resolves by picking a side. Keep the JSON per text and small, and prefer native objects for anything edited often.
 - **Moved-text and merged cells.** The export mapping for `ConstChartMovedTextMarker` and `MergesAfter/MergesBefore` must be compared with real exports.
 - **Chart markers with punctuation.** The web app already strips adhered punctuation via `data-listref`; the sidecar should emit clean tag text and let the renderer add punctuation from `lit` elements as today.
