@@ -372,3 +372,81 @@ edited object's class chain: `EnsureCustomFields` walks `GetBaseClsId` upward an
 `CmPossibility` therefore appears on semantic domains, parts of speech, genres — every possibility
 in every list. Do not do it. The chart classes (`ConstChartRow`, `DsConstChart`) have no DataTree in
 FLEx, which is exactly why custom fields are safe there and not here.
+
+## Addendum 6: file formats and size limits in LinkedFiles (verified, 2026-09)
+
+Three questions: can a `.txt` file holding JSON beat the size cap, could XML be used instead, and
+what is actually allowed in `LinkedFiles`?
+
+### Size caps by extension
+
+Chorus builds an extension → max-size map from the installed handlers and falls back to a default
+for anything unclaimed (`LargeFileFilter.cs`, `CacheMaxSizesOfExtension` / `GetMaxSizeForExtension`;
+`maxForExtension = Megabyte;` where `Megabyte => 1048576`):
+
+| Extension | Cap | Why |
+|---|---|---|
+| `.txt` | **effectively unlimited** | Chorus's `TextFileTypeHandler` claims `txt` from `GetExtensionsOfKnownTextFileTypes()` and returns `MaximumFileSize = UInt32.MaxValue`. |
+| `.json` (and any unclaimed extension) | **1 MiB** | No handler claims it, so the default applies. Not 10 MiB — that figure is the image and audio handlers. |
+| images / audio | 10 MiB | Their handlers' `MaximumFileSize`. |
+
+So yes: **naming the backup `.txt` with JSON inside raises the ceiling from 1 MiB to unlimited.**
+
+One difference that comes with it: `.txt` is *claimed*, so Chorus will try to **merge** it with
+`diff3` rather than treat it as opaque, and on an overlapping conflict `Do3WayMerge` throws
+(`"Could not merge text files without conflict"`). Under the per-peer filename design of addendum 3
+no file is ever written by two peers, so no merge is ever attempted and this never fires. It would
+matter only if peers shared a single file — in which case `.txt` fails loudly where `.json` fails
+silently.
+
+Do not read "unlimited" as license. Chorus's own header comment is blunt: *"if even one large file
+is committed to the repo, that repo is completely dead for all users of that project"*, and
+Mercurial history is permanent, so an oversized backup bloats every colleague's clone forever. Keep
+per-chart backups in the kilobytes, cap FDAT's own writes (refuse well below 1 MiB, warn earlier),
+and split per chart rather than growing one file.
+
+### XML is excluded — do not use it
+
+`**.xml` is in FLExBridge's exclude list, and *"Exclude has precedence"* over the include patterns
+(`flexbridge/src/LibFLExBridge-ChorusPlugin/Infrastructure/FlexFolderSystem.cs:18-45`). An `.xml`
+file under `LinkedFiles/Others` would **never sync**. Same for `.zip`, `.flextext`, `.bak`, `.tmp`,
+`.log` and the video extensions.
+
+### What is allowed in LinkedFiles
+
+The include patterns are `LinkedFiles/AudioVisual/**.*`, `LinkedFiles/Others/**.*` and
+`LinkedFiles/Pictures/**.*` — i.e. **every file, any extension**, minus the global excludes:
+
+> `.fwdata` (and `-replaced`, `-x`, `.lock`), `.fwdb`, `.bad`, `.bak`, `.flextext`, `.fwbackup`,
+> `.fwstub`, `.lint`, `.log`, `.orig`, `.oxekt`, `.oxes`, `.oxesa`, `.tmp`, `.xml`, `.zip`,
+> `.dupid`, `.NewChorusNotes`, and the video extensions (mpa, mpe, mpg, mpeg, mpv2, mp2, mp4, mov,
+> wmv, rm, avi, wvx, m1v).
+
+`.json` and `.txt` are both fine. Subfolders are fine (`**.*` is recursive), so
+`LinkedFiles/Others/fdat/…` works.
+
+### No database reference is needed
+
+The include patterns are **path-based**: Chorus hands Mercurial a working-directory pattern and
+nothing consults the LCM model. A file sitting in `LinkedFiles/Others/fdat/` is committed and pushed
+whether or not any `CmFile`, `CmMediaURI` or `CmPicture` points at it. A model reference is only
+needed if **FLEx** should display or resolve the file — which is precisely what FDAT does not want,
+since an unreferenced file is invisible in FLEx and cannot confuse a linguist.
+
+Two conditions still apply: the project must keep the **default Linked Files location** (a relocated
+folder syncs nothing), and the file must be under the size cap for its extension.
+
+No FLEx feature that prunes unreferenced files from `LinkedFiles` was found in the sparse checkout —
+but that is an absence of evidence, not a guarantee. **Phase 0 should confirm** that a file left in
+`LinkedFiles/Others/fdat/` survives a Send/Receive round trip and a FLEx backup/restore cycle, since
+a sweeper would silently delete backups.
+
+### Recommendation
+
+- Backups: `LinkedFiles/Others/fdat/<chartGuid>.<peerId>.json`, pretty-printed one key per line
+  (readable in hg history, and diff-friendly if ever merged), unreferenced by the model.
+- Switch an individual file to `.txt` only if it could realistically approach 1 MiB — and prefer
+  splitting it instead.
+- View/UI state (column widths, notes side, current filter) stays in FDAT's local app-data, never in
+  the project: FLEx keeps its own equivalents per machine, and Send/Receive deliberately excludes
+  them.
