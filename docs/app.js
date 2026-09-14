@@ -496,6 +496,16 @@ function getCurrentDocument(){
   return genre.documents[ctx.documentId] || null;
 }
 
+// Resolve the language/genre/document objects for a context inside a settings object.
+// Mutate the returned objects and save that same settings object; the getCurrent*()
+// helpers above return copies and are for reading only.
+function resolveContext(settings, ctx){
+  const lang = ctx.languageId ? settings.languages[ctx.languageId] : null;
+  const genre = lang && ctx.genreId ? lang.genres[ctx.genreId] : null;
+  const doc = genre && ctx.documentId ? genre.documents[ctx.documentId] : null;
+  return { lang, genre, doc };
+}
+
 function setCurrentContext(languageId, genreId, documentId){
   const ctx = { languageId, genreId, documentId };
   saveCurrentContext(ctx);
@@ -3501,11 +3511,10 @@ function initGenreControls(){
   });
   
   nameInput.addEventListener('change', ()=>{
-    const lang = getCurrentLanguage();
-    const ctx = loadCurrentContext();
-    if(lang && ctx.genreId && lang.genres[ctx.genreId]){
-      lang.genres[ctx.genreId].name = nameInput.value.trim();
-      const settings = loadHierarchicalSettings();
+    const settings = loadHierarchicalSettings();
+    const { genre } = resolveContext(settings, loadCurrentContext());
+    if(genre){
+      genre.name = nameInput.value.trim();
       saveHierarchicalSettings(settings);
       updateGenreList();
     }
@@ -3656,10 +3665,10 @@ function initDocumentControls(){
   });
   
   nameInput.addEventListener('change', ()=>{
-    const doc = getCurrentDocument();
+    const settings = loadHierarchicalSettings();
+    const { doc } = resolveContext(settings, loadCurrentContext());
     if(doc){
       doc.name = nameInput.value.trim();
-      const settings = loadHierarchicalSettings();
       saveHierarchicalSettings(settings);
       updateDocumentList();
     }
@@ -3674,11 +3683,11 @@ function initDocumentControls(){
     const name = prompt('Enter document name:');
     if(!name) return;
     const id = 'doc_' + Date.now().toString(36);
-    const genre = getCurrentGenre();
+    const settings = loadHierarchicalSettings();
+    const { genre } = resolveContext(settings, ctx);
     if(!genre) return;
     const doc = ensureDocument(genre, id);
     doc.name = name.trim();
-    const settings = loadHierarchicalSettings();
     saveHierarchicalSettings(settings);
     ctx.documentId = id;
     saveCurrentContext(ctx);
@@ -3727,13 +3736,13 @@ function initDocumentControls(){
           alert('Invalid document export file.');
           return;
         }
-        const genre = getCurrentGenre();
+        const settings = loadHierarchicalSettings();
+        const { genre } = resolveContext(settings, ctx);
         if(!genre) return;
         // Generate new ID to avoid conflicts
         const newId = 'doc_' + Date.now().toString(36);
         data.document.id = newId;
         genre.documents[newId] = data.document;
-        const settings = loadHierarchicalSettings();
         saveHierarchicalSettings(settings);
         ctx.documentId = newId;
         saveCurrentContext(ctx);

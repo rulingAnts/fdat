@@ -9,6 +9,11 @@ dist
 # Dependencies
 node_modules/
 
+# Python (desktop/sidecar)
+__pycache__/
+*.py[cod]
+.venv/
+
 # Sample XML data files (language data is private)
 DiscourseChartSet1a.xml
 *.private.xml

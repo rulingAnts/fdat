@@ -37,8 +37,8 @@ What it costs:
    ┌──────────────────────────────┐        ┌──────────────────────────────┐
    │ LCM sidecar (Python +        │  LCM   │ FieldWorks project           │
    │ flexlibs 2.x + pythonnet)    │◄──────►│ (.fwdata / shared XML)       │
-   │ list projects / charts,      │        │ + fdat annotation store      │
-   │ export chart, write back     │        │   keyed by GUIDs (§5)        │
+   │ list projects / charts,      │        │ + FDAT data stored in the    │
+   │ export chart, write back     │        │   project, synced by S/R (§5)│
    └──────────────────────────────┘        └──────────────────────────────┘
 ```
 
@@ -59,7 +59,7 @@ Exposed as `window.fdatHost` by `shell/preload.js`; every call returns a Promise
 | `openProject(name)` | `openProject` | Opens (read-only at first). Returns writing systems and whether write access was granted. |
 | `listCharts()` | `listCharts` | `{ guid, title, textTitle, templateName, rowCount }` per `DsConstChart`. |
 | `getChartXml(guid)` | `exportChart` | The chart as FDAT XML (§4) with `guid` attributes. The renderer loads it with `window.FDAT.loadXmlText()` + `previewCurrentXml()`, which already exist. |
-| `getAnnotations(chartGuid)` / `putAnnotations(chartGuid, data)` | same | The GUID-keyed annotation document (§5). |
+| `getAnnotations(chartGuid)` / `putAnnotations(chartGuid, data)` | same | Everything FDAT stores for a chart, assembled from native objects plus the JSON remainder (§5). |
 | `setRowNotes(rowGuid, text)` | `setRowNotes` | First write-back (Phase 2). |
 | `closeProject()` | `closeProject` | Releases the LCM cache. |
 
@@ -70,9 +70,9 @@ The renderer keeps working without a host: `host-glue.js` does nothing unless `w
 | Area in `docs/app.js` | Desktop fate |
 |---|---|
 | XML parsing, XSLT render, column resize, export (HTML/print) | Kept as-is. |
-| Marker order/visibility/style, abbreviations, salience bands, custom columns, notes mode, free-translation display | Kept; their persistence moves from localStorage to the annotation store, keyed by FLEx GUIDs (rows: `data-row-guid`, cells: `data-cell-guid`, tokens: `data-guid`, which the XSL already passes through). |
+| Marker order/visibility/style, abbreviations, salience bands, custom columns, notes mode, free-translation display | Kept; their persistence moves from localStorage into the FLEx project (native objects plus a JSON remainder, §5), keyed by FLEx GUIDs (rows: `data-row-guid`, cells: `data-cell-guid`, tokens: `data-guid`, which the XSL already passes through). |
 | Free-translation *editing* | Replaced by reading `Segment.FreeTranslation`; editing stays in FLEx. |
-| Hierarchical settings (language/genre/document), legacy-key sync, settings import/export, row/token GUID registries, file input | Removed in the desktop build. Language-level things (abbreviation names, marker styles) become per-project preferences in the store. |
+| Hierarchical settings (language/genre/document), legacy-key sync, settings import/export, row/token GUID registries, file input | Removed in the desktop build. Language-level things (abbreviation names, marker styles) live on the Chart Markers list in the project (§5). |
 | PWA plumbing (service worker, install prompts) | Not loaded in the desktop build (the shell strips the `sw.js` registration or serves a no-op). |
 
 Practical step for the split: separate `docs/app.js` into `chart-renderer.js` (parsing, XSLT, DOM augmentation, export) and `web-settings.js` (browser storage, panels wiring for the PWA). The desktop repo consumes `chart-renderer.js` plus its own `desktop-settings.js`. Until the renderer is published as a package, vendor it into the desktop repo with `git subtree` so fixes flow both ways.
@@ -95,13 +95,48 @@ The sidecar emits the same XML shape the renderer already consumes (see `test/fi
 
 Everything above needs to be checked against a real "Export Text Chart" file from the same project during Phase 0; the renderer is tolerant, but the spike should aim for byte-for-byte equivalence minus the `guid` attributes.
 
-## 5. Where annotations live
+## 5. Where annotations live: inside the FLEx project, synced by Send/Receive
 
-FLEx custom fields cannot be attached to chart rows or cells (custom fields exist for lexical entries/senses/examples/allomorphs and notebook records, not `ConstChartRow`), so FDAT-specific data needs a home. Recommended layering:
+Goal: **everything FDAT knows about a chart lives in the FieldWorks project**, so a colleague who does Send/Receive sees the same bands, columns, marker styling and formatting on another computer, and nothing is lost when the browser cache or the machine is replaced. No browser storage, no import/export, no external store.
 
-1. **Read what FLEx has.** Free translations from segments, notes from rows, markers from the Chart Markers list. No duplication.
-2. **Annotation store next to the project, keyed by GUIDs.** One JSON document per chart at `<FieldWorks Projects>\<Project>\fdat\<chartGuid>.json` (or a single SQLite file), holding: salience band tree and `{ rowGuid: bandId }`, custom column definitions and `{ rowGuid: { columnId: value } }`, marker styling/order/visibility (`{ tagGuid: style }`), abbreviation names, prologue/epilogue, display prefs. Plain files, diffable, easy to back up, and independent of the FieldWorks data version. Note that Send/Receive does not sync arbitrary project files; document this, and consider Phase 3 options below if team sharing matters.
-3. **Write back to FLEx only where a native field exists.** Row notes (`ConstChartRow.Notes`) first. Two FLEx-native options exist for salience bands if sharing via Send/Receive becomes important: (a) a "Salience" possibility list plus `TextTag` spans (the Tagging view's mechanism), or (b) chart markers in a dedicated column. Both are visible in FLEx itself, which may or may not be wanted; defer until there is a real need.
+### What Send/Receive actually syncs
+
+- **Every object in the LCM model.** Discourse charts, possibility lists (built-in and custom), text tags, notebook records, and **custom field definitions and values** are all part of the `.fwdata` model that FLExBridge/Chorus splits into XML and merges element by element. Two users editing different objects merge cleanly; edits to the same field conflict and one side wins (Chorus records a conflict note).
+- **Linked files** (`<project>/LinkedFiles/Pictures`, `AudioVisual`, `Others`): FLExBridge includes these in the repository, subject to a per-file size cap (small files are fine). They are treated as opaque: no element-level merge, whole-file "ours/theirs" on conflict.
+- Not synced: arbitrary files elsewhere in the project folder (`ConfigurationSettings` is only partially covered), and anything outside the project.
+
+So there are two sync-safe places for FDAT data: native LCM objects (best, mergeable, visible in FLEx) and small files under `LinkedFiles/Others` (opaque but synced). Phase 0 must confirm both on a real two-machine Send/Receive before any of the design below is relied on.
+
+### Mapping FDAT data to native FLEx objects
+
+| FDAT data | FLEx-native home | Sync/merge | Visible in FLEx |
+|---|---|---|---|
+| Free translations | `Segment.FreeTranslation` (read only; edited in FLEx) | element-level | yes |
+| Row notes | `ConstChartRow.Notes` | element-level | yes (Notes column) |
+| Chart markers, their names/abbreviations/definitions (FDAT's "abbreviations list") | the Chart Markers list (`CmPossibility.Name`, `Abbreviation`, `Description`) | element-level | yes (Lists) |
+| Marker visibility and text colour | `CmPossibility.Hidden`, `ForeColor` on the marker | element-level | partly (colour is used by some FLEx views) |
+| Marker display order | order of the possibilities in the list (FLEx lets users reorder) | element-level | yes |
+| Salience band definitions (tree, labels, colours) | a sub-list under **Text Markup Tags** (`LangProject.TextMarkupTagsOA`), which is hierarchical and user-extensible; colour in `CmPossibility.BackColor` | element-level | yes (Tagging view lists) |
+| Row → band assignment | a `TextTag` on the text (`StText.TagsOC`) spanning the row's word groups (`BeginSegment/EndSegment/BeginAnalysisIndex/EndAnalysisIndex`), `TagRA` = the band. Alternative: a `ConstChartTag` in a dedicated "Salience" template column, which shows the band as a marker in the chart itself | element-level | yes (Tagging view, or the chart) |
+| Custom column definitions and per-row free-text values | no per-row free-text field exists besides `Notes`; see "the remainder" below | | |
+| Chart title, prologue, epilogue, notes mode/width, salience display options, marker bold/italic/size | see "the remainder" below | | |
+
+Everything in the table with a native home should use it: those objects merge properly, other tools (and FLEx itself) can see them, and the data survives re-charting because FLEx keeps the same GUIDs.
+
+### The remainder: a JSON document stored *in* the project
+
+Two sync-safe options for the per-row free text and the chart-level settings; both keep the data inside the project:
+
+1. **A custom field on the interlinear `Text`** ("FDAT data", multi-paragraph text) holding one JSON document per text: `{ version, charts: { <chartGuid>: { columns, cells: { <rowGuid>: {...} }, title, prologue, epilogue, display } } }`. Custom field definitions and values are model data, so they sync and back up with the project, and LCM guarantees the field exists on every machine after the first Send/Receive. The field shows up in the text's Info tab as an opaque JSON block (name it clearly and put it last). Chorus merges it as one string: concurrent edits by two users to the same text's FDAT data conflict wholesale. Keep the document small and per-text so that is rare. *Verify in Phase 0 that the installed FieldWorks version offers custom fields on `Text`* (they are not offered on `ConstChartRow`, `Segment` or `CmPossibility`).
+2. **A JSON file per chart under `LinkedFiles/Others/fdat/`**. Simpler to write (no LCM write transaction), synced as an opaque file, but invisible to FLEx and not covered by FLEx's own backup/restore of the model unless linked files are included. Use this only if custom fields on `Text` turn out to be unavailable.
+
+Language-level preferences that are not per-marker (for example a default display preset) can live in the same JSON on a designated notebook record, or simply be repeated per text; do not build a third mechanism for them.
+
+### Consequences for the code
+
+- The renderer's settings panels keep their UI but read/write through `window.fdatHost` (`getAnnotations` / `putAnnotations` become "read the native objects + the JSON remainder" / "write back"), keyed by `data-row-guid` / `data-guid` instead of row labels and index-based registries.
+- Writes need `writeEnabled=True` in flexlibs and run inside an LCM unit of work; the project must not be open in FLEx at the time unless the shared backend allows it (§7). The UI should batch edits and show "saved to project" explicitly.
+- The web app's language/genre/document hierarchy, legacy-key sync and import/export are not carried over.
 
 ## 6. Phases
 
@@ -110,7 +145,8 @@ FLEx custom fields cannot be attached to chart rows or cells (custom fields exis
 - Run `sidecar/fdat_lcm.py list-charts <Project>` and `export <Project> <chartGuid> out.xml`.
 - Load `out.xml` in the web app (`npm run dev:web`, paste or pick the file). It must render like FLEx's own export of the same chart; fix the mapping in §4 until it does.
 - Check whether the sidecar can open a project while FLEx has it open (see §7) and how long opening a large project takes.
-- Exit criterion: a real chart renders from LCM with `guid` attributes on rows, cells and tokens.
+- Verify the storage assumptions in §5 on a two-machine Send/Receive: a custom field added to `Text` (definition and value) arrives on the other machine; a `TextTag` created from flexlibs shows in FLEx's Tagging view and arrives too; a small file under `LinkedFiles/Others` arrives.
+- Exit criterion: a real chart renders from LCM with `guid` attributes on rows, cells and tokens, and the storage checks above have a yes/no answer each.
 
 ### Phase 1 — desktop v1, read-only (new repository)
 
@@ -121,16 +157,17 @@ FLEx custom fields cannot be attached to chart rows or cells (custom fields exis
 
 ### Phase 2 — GUID-keyed annotations and first write-back
 
-- Annotation store (§5.2) behind the bridge; the salience, custom-column, marker and abbreviation panels read/write it instead of localStorage; assignments keyed by `data-row-guid` / `data-guid` instead of row labels.
+- Native storage per §5 behind the bridge: bands as a Text Markup Tags sub-list plus `TextTag`s, marker visibility/colour/order on the Chart Markers list, abbreviation names on the markers, the remainder in the "FDAT data" custom field on the text. Panels read/write through the bridge instead of localStorage; assignments keyed by `data-row-guid` / `data-guid` instead of row labels.
 - Free translations read from segments (tooltip + inline modes keep working; the editor goes away).
-- Row notes write-back (`setRowNotes`), with a "project is open in FLEx" guard.
+- Row notes write-back (`setRowNotes`), with a "project is open in FLEx" guard and explicit "saved to project" feedback.
+- Confirm with a second machine that a full round of annotations survives Send/Receive in both directions.
 - Remove the language/genre/document hierarchy and settings import/export from the desktop build (the split described in §3).
 - Exit criterion: annotations survive re-charting in FLEx (rows moved/merged) and a project rename.
 
 ### Phase 3 — polish and decide the web app's future
 
 - Excel export (ROADMAP §3) now has stable column identities; do it here.
-- Team sharing of annotations (FLEx-native representation, or a store the team syncs some other way).
+- Move any remaining JSON-held data to native objects where a sensible representation exists (e.g. enumerated custom columns as tag lists).
 - Web app: keep as the viewer for exported XML on Mac/Linux/tablets, or freeze it. Either way the renderer stays shared.
 
 ## 7. Risks and open questions
@@ -138,7 +175,7 @@ FLEx custom fields cannot be attached to chart rows or cells (custom fields exis
 - **Project locking.** LCM projects are opened by one process at a time unless both use the shared backend. flexlibs opens with `FLExProject.OpenProject(name, writeEnabled)`; verify in Phase 0 whether that succeeds while FLEx has the project open, and design the UI for the "close it in FLEx first" case (read-only snapshot + "Refresh" button is acceptable for v1).
 - **FieldWorks version coupling.** flexlibs loads the installed FieldWorks; a FieldWorks upgrade can require a flexlibs upgrade. Pin flexlibs per FieldWorks major version and detect mismatches at sidecar start.
 - **Python packaging.** Embedded Python + pythonnet is ~40 MB; acceptable. Signing the installer (already a roadmap item) matters more once a second executable is bundled.
-- **Send/Receive.** The annotation store is not synced by FLEx; say so in the UI and keep the store one file per chart so it can be copied by hand or synced by other means.
+- **Send/Receive merge granularity.** Native objects merge per element; the JSON remainder in a custom field merges as one string, so two people editing the same text's FDAT settings between syncs produces a conflict that Chorus resolves by picking a side. Keep the JSON per text and small, and prefer native objects for anything edited often.
 - **Moved-text and merged cells.** The export mapping for `ConstChartMovedTextMarker` and `MergesAfter/MergesBefore` must be compared with real exports.
 - **Chart markers with punctuation.** The web app already strips adhered punctuation via `data-listref`; the sidecar should emit clean tag text and let the renderer add punctuation from `lit` elements as today.
 

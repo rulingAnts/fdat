@@ -46,9 +46,13 @@ async function waitForServer(url, ms = 10000) {
     browser = await playwright.chromium.launch();
     const page = await browser.newContext().then(c => c.newPage());
     const problems = [];
+    let promptAnswer = null; // set before triggering a prompt() the test expects
     page.on('pageerror', e => problems.push('pageerror: ' + e.message));
     page.on('console', m => { if (m.type() === 'error') problems.push('console.error: ' + m.text()); });
-    page.on('dialog', d => { problems.push('dialog: ' + d.message()); d.dismiss(); });
+    page.on('dialog', d => {
+      if (d.type() === 'prompt' && promptAnswer !== null) { const a = promptAnswer; promptAnswer = null; d.accept(a); return; }
+      problems.push('dialog: ' + d.message()); d.dismiss();
+    });
 
     await page.goto(base);
     check(await page.title() === 'Flex DiscourseChart Analysis Tool (FDAT)', 'page loads with expected title');
@@ -133,6 +137,29 @@ async function waitForServer(url, ms = 10000) {
     // Settings export/import round trip through the public JSON shape
     const settings = await page.evaluate(() => collectAllSettings());
     check(settings && settings.fdat_hierarchical_settings_v1 && settings.fdat_hierarchical_settings_v1.languages, 'collectAllSettings returns hierarchical settings');
+
+    // Language / genre / document switching: new documents persist and do not inherit the previous
+    // document's per-document settings (regression: Add Document saved the wrong settings object)
+    await page.evaluate(async (x) => { window.FDAT.loadXmlText(x, 'sample-chart.xml'); await window.FDAT.previewCurrentXml(); }, xml);
+    await page.waitForSelector('table.chartshell tbody tr .cc-edit');
+    promptAnswer = 'Testlang'; await page.$eval('#addLanguageBtn', b => b.click());
+    promptAnswer = 'Narrative'; await page.$eval('#addGenreBtn', b => b.click());
+    promptAnswer = 'Doc B'; await page.$eval('#addDocumentBtn', b => b.click());
+    const ctx = await page.evaluate(() => loadCurrentContext());
+    const stored = await page.evaluate(() => loadHierarchicalSettings());
+    const newDoc = stored.languages[ctx.languageId]?.genres[ctx.genreId]?.documents[ctx.documentId];
+    check(newDoc && newDoc.name === 'Doc B', 'a newly added document is persisted in the hierarchical store');
+    await page.evaluate(() => window.FDAT.previewCurrentXml());
+    await page.waitForSelector('table.chartshell');
+    check(await page.$$eval('table.chartshell tbody td.cc-cell', n => n.length) === 0, 'the new document does not inherit the previous document\'s custom columns');
+    await page.$eval('#documentName', i => { i.value = 'Doc B renamed'; i.dispatchEvent(new Event('change', { bubbles: true })); });
+    check((await page.evaluate(() => getCurrentDocument())).name === 'Doc B renamed', 'renaming a document persists');
+    for (const [sel, val] of [['#currentLanguageSelect', 'default'], ['#currentGenreSelect', 'narrative'], ['#currentDocumentSelect', 'default']]) {
+      await page.$eval(sel, (s, v) => { s.value = v; s.dispatchEvent(new Event('change', { bubbles: true })); }, val);
+    }
+    await page.evaluate(() => window.FDAT.previewCurrentXml());
+    await page.waitForSelector('table.chartshell tbody tr .cc-edit');
+    check(await page.$eval('table.chartshell tbody tr .cc-edit', d => d.textContent) === 'hello', 'switching back restores the first document\'s custom column value');
 
     check(problems.length === 0, 'no page errors, console errors, or dialogs' + (problems.length ? ' — ' + problems.join(' | ') : ''));
   } catch (e) {
