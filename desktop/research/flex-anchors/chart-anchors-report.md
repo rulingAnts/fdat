@@ -574,3 +574,48 @@ colleague's Send/Receive.
    GUID, with a stable key order — so two users editing different rows touch different lines and
    diff3 succeeds. Accept that same-row edits will hard-fail, and weigh that against simply putting
    the data in the model instead.
+
+## Addendum 10: settled division of storage
+
+Three tiers, each chosen for how it merges:
+
+| Tier | Holds | Why there |
+|---|---|---|
+| **FLEx model** — custom fields on `ConstChartRow` and `DsConstChart`, marker colours/`Hidden` on the marker possibilities, grouping read from the list hierarchy | Everything that is *analysis*: row→band assignments, custom-column values, per-chart settings, marker styling | Merges per object and per field by GUID, so two people annotating different rows (or different fields of one row) merge automatically. This is the only tier with real merging. |
+| **Per-peer JSON in `LinkedFiles/Others/fdat/`** | Things with no home in the model — **view settings above all** — plus a backup of the model-stored data | Syncs to the team, readable by any FDAT install on the project, and per-peer filenames mean no file is ever written by two peers, so the no-merge limitation never bites |
+| **FDAT local app-data** | The working copy of view settings; anything transient | Always available, even when the project's LinkedFiles folder has been relocated and syncs nothing |
+
+### Why per-peer filenames fit view settings particularly well
+
+View settings are inherently per-person: one linguist's column widths and collapsed panels are not
+another's. A per-peer file gives each user their own without any merge, while still letting every
+other FDAT install *read* them — so "adopt the settings Bob is using" or "use this project's house
+layout" becomes possible, as an explicit action rather than an automatic overwrite.
+
+Suggested layout inside the folder:
+
+```
+LinkedFiles/Others/fdat/
+  README.txt                            written once, never rewritten
+  <peerId>.settings.json                view/UI settings for this contributor, keyed by chart GUID where per-chart
+  <chartGuid>.<peerId>.backup.json      backup of the model-stored FDAT data for one chart
+```
+
+Settings and backups are kept in separate files because their lifecycles differ: a backup is written
+when the model is saved, while settings change on ordinary UI interaction.
+
+### Practical rules
+
+- **Throttle settings writes.** Every write lands in Mercurial history permanently, and history is
+  shared by the whole team. Debounce (write on close or after an idle interval, not on every column
+  drag), persist only settings worth keeping, and never write an unchanged file.
+- **Local is the working store; the project file is a published copy.** Write settings to local
+  app-data first and mirror them into the project file. That keeps FDAT working when LinkedFiles has
+  been relocated and syncs nothing (addendum 7), and avoids a half-written project file becoming the
+  only copy.
+- **Never auto-apply another peer's file** — settings or backup. Both are readable and both are
+  offered explicitly; neither overrides what is already here.
+- **Keep files small.** `.json` is capped at 1 MiB and, more importantly, anything committed bloats
+  every colleague's clone forever.
+- The model stays the store of record. If a piece of data could live in a custom field, it should —
+  that is the only tier where two people's edits genuinely combine.
