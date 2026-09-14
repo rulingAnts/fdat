@@ -174,3 +174,65 @@ Caveats to design for:
 - Without project sharing there is no refresh path at all: the cache is a startup snapshot. FDAT must then close and reopen the project to see changes, which is slow on a large project — another reason to detect the sharing setting and recommend enabling it.
 - Re-exporting after a refresh can find rows deleted or recreated by FLEx (CA §2), so run the row re-anchoring reconciliation on every refresh, not just at load.
 - If FDAT ever polls while holding local unsaved changes and the same objects were edited in FLEx, reconciliation can be refused; the backend then hands a pending reconciliation to the UI layer (`ILcmUI.ConflictingSave`). Keep write windows short so this window is effectively closed.
+
+## Addendum 3: JSON as cache and backup (design, 2026-09)
+
+Agreed split: **custom fields on the chart classes are the store of record; the JSON file is a cache
+and a backup.** That removes the objection to the linked-file idea (whole-file, last-merger-wins
+merge) because nothing authoritative lives there, and it covers a real failure mode that the model
+store has on its own.
+
+### Why a backup earns its place
+
+Two documented ways FDAT data can vanish through ordinary FLEx use:
+
+- "When a user deletes a custom field, all the data will also be deleted." (`../refs/sil-docs-notes.md`, FLEx 9.1 Conceptual Model §2.9.)
+- Deleting a custom list deletes every custom field that references it, on any class (CA 3.6, `FieldWorks/Src/xWorks/DeleteCustomList.cs:110-118`) — which is how a salience band list-reference field would be defined.
+
+Neither is recoverable from within the model. A backup written on every successful save is the
+insurance, and it is also what makes the store-of-record choice safe to commit to.
+
+### Cache: local, not synced
+
+The cache is derived per-machine data; syncing it would add churn and pointless conflicts. Keep it
+in FDAT's own application-data folder, never in `LinkedFiles`.
+
+Cheap invalidation token, verified: LCM bumps `DateModified` on the **nearest owner that has one**
+when any owned object is dirtied — `CollectDateModifiedObjectInternal` walks `Owner` upward
+(`liblcm/src/SIL.LCModel/DomainImpl/CmObject.cs:3654-3675`), driven by "A generic side effect of all
+changes is to update DateModified" in `UndoStack` (`Infrastructure/Impl/UndoStack.cs:295-311`).
+`ConstChartRow` and the cell parts have no `DateModified`, and they are owned by `DsConstChart`,
+which has one through `CmMajorObject` — so **any row or cell edit bumps `DsConstChart.DateModified`.**
+
+So the refresh loop becomes cheap: poll with a no-op `Save()` (addendum 2), compare
+`chart.DateModified` with the token recorded at the last export, and re-export only when it moved.
+
+Two tokens are needed, because possibility lists are not owned by the chart:
+
+| Token | Covers |
+|---|---|
+| `DsConstChart.DateModified` | rows, cells, word groups, tags, clause and moved-text markers, FDAT's own custom-field values on rows and on the chart |
+| `DsDiscourseData.ChartMarkersOA.DateModified` (and the template list's) | marker added/renamed/reordered/recoloured, template columns changed — these are `CmPossibilityList`s, also `CmMajorObject`s |
+
+Caveat: FDAT's own writes bump the chart token too, so record the token value observed immediately
+after each FDAT save and ignore that one, or the app will re-export itself in a loop. Note also that
+`UndoStack` deliberately skips the bump for newly created objects.
+
+### Backup: synced, per-peer filename, manual restore
+
+```
+<project>/LinkedFiles/Others/fdat/<chartGuid>.<peerId>.json
+```
+
+- **Per-peer filename removes the merge problem entirely.** Two colleagues never write the same path, so Chorus never has to merge these files and the "unmergable file type, merging machine wins" behaviour never fires. Each peer's backup travels to everyone.
+- Stay well under the **1 MiB** cap that applies to extensions no Chorus handler claims (addendum in the linked-files findings); per-chart FDAT data is kilobytes.
+- Only syncs if the project keeps the **default Linked Files location** — the same precondition as pictures and audio.
+- Stamp provenance in the file: schema version, project GUID, chart GUID, peer/user id, UTC timestamp, and the model's data version. A restore flow reads these and refuses a mismatch.
+- **Restore is always user-initiated and shows a diff first.** Never restore automatically: a colleague's backup arriving through Send/Receive may be older than the custom-field data already in the project, and an automatic restore would silently overwrite good data with stale data.
+- Write **re-anchoring keys alongside row GUIDs** — row label, the first word group's begin-segment GUID and analysis index, and the column possibility GUID — so a restore can re-attach values even when FLEx deleted and recreated rows in the meantime (CA §2). A backup keyed on row GUID alone is worthless after a re-chart.
+
+### Write-through order
+
+On save: write the custom fields through LCM first, `Save()`, and only then write the JSON backup
+with the token observed after that save. If the LCM write fails, no backup is written, so the backup
+can never claim state the project never had.
