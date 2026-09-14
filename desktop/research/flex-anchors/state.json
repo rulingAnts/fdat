@@ -3258,6 +3258,146 @@
     "Does the Avalonia Texts area use the same TextInformationPane/FullInformation wiring (only the legacy Words/areaConfiguration.xml was checked)?",
     "The FieldWorks checkout is sparse; Src outside the listed folders (e.g. other exporters) was searched only via grep of the folders present plus git grep HEAD for StandardParts."
    ]
+  },
+  "gap:8": {
+   "summary": "A word token in FLEx has no GUID of its own. Its only identity is the pair (Segment object, index into Segment.Analyses) — AnalysisOccurrence is literally that pair, with equality defined on it. The GUID FLEx puts on `<word>` in its own interlinear export is the IAnalysis (WfiWordform/WfiAnalysis/WfiGloss) GUID, which FLEx's own comment says \"may well not be unique in the file\", and which is swapped in place whenever the user glosses/approves the word. So PLAN §4's \"`<word guid>` per analysis\" cannot be a token key.\n\nAnalysisAdjuster does keep (segment, analysis-index) keys valid across baseline edits — shifting indices by the number of analyses removed/added, moving endpoints across segments, snapping to the nearest wordform, or deleting the reference when its text is gone — but ONLY for objects it collects from the model: `para.GetTags()` (TextTag) and `para.GetChartCellRefs()` (ConstChartWordGroup), the two implementers of IAnalysisReference. A (segmentGuid, index) snapshot that FDAT stores in a custom field or JSON is never touched and goes stale. Two further caveats: Make-phrase/Break-phrase and full reparse rewrite Segment.Analyses directly with no reference adjustment at all (\"Joining words renumbers the occurrences\"), and FLExBridge merges Segment.Analyses atomically while WordGroup/TextTag indices merge per object, so indices can drift after a conflicting Send/Receive.\n\nDesign consequence: the sidecar should emit the FLEx occurrence key itself — segment GUID + index (e.g. `data-guid=\"<segGuid>:<idx>\"`) — as a render-time identity, alongside the IAnalysis GUID as descriptive data and the enclosing ConstChartWordGroup GUID. Anything FDAT persists per token should be anchored to a FLEx-maintained IAnalysisReference: the containing WordGroup (GUID + ordinal within the group's GetOccurrences()) or, for a durable per-token GUID, an FDAT-created one-token TextTag in StText.Tags, which the adjuster maintains exactly like WordGroups. The proposed row fallback (chart GUID + first WordGroup's BeginSegment GUID + BeginAnalysisIndex + column GUID) is sound only if those values are read live from the WordGroup at reconciliation time — that is what FLEx maintains — not compared against a stored snapshot; add the first word's baseline text as a tie-breaker (FLEx's own IsAnalogousTo compares column + baseline text). Note also that in the RemoveMissingMarker recreation path the row had no WordGroup at all (only the marker), so that fallback is uncomputable there; only the row index/label carry over.",
+   "findings": [
+    {
+     "claim": "A word token (analysis occurrence) has no GUID; its identity is the pair (Segment, Index), and equality/hash are defined on exactly those two values.",
+     "evidence": "`public class AnalysisOccurrence { ... public ISegment Segment { get; private set; } ... public int Index { get; private set; }` and `public bool Equals(AnalysisOccurrence other) { return other.Segment == Segment && other.Index == Index; }` / `GetHashCode() { return Segment.GetHashCode() ^ Index; }`. The class does not derive from CmObject and has no Guid.",
+     "source": "liblcm/src/SIL.LCModel/DomainServices/AnalysisOccurrence.cs:25-45, 74-78, 159-171",
+     "confidence": "high",
+     "critical": true,
+     "implication": "FDAT must emit a composite key (segment GUID + index) for a token; no single FLEx GUID names a token."
+    },
+    {
+     "claim": "The GUID FLEx itself writes on `<word>` in the interlinear XML export is the IAnalysis object's GUID (WfiWordform/WfiAnalysis/WfiGloss) and FLEx's own comment states it is not unique in the file.",
+     "evidence": "`protected override void WriteStartWord(int hvo) { ... // Note that this guid may well not be unique in the file, since it refers to a // WfiWordform, WfiAnalysis, WfiGloss, or PunctuationForm (the last is not output), // any of which may be referred to repeatedly in an analyzed text. ... WriteGuidAttributeForObj(hvo); }`",
+     "source": "FieldWorks/Src/LexText/Interlinear/InterlinearExporter.cs:1093-1102",
+     "confidence": "high",
+     "critical": true,
+     "implication": "PLAN §4's `<word guid>` per analysis (PLAN.md:90) and the XSL's `data-guid` pass-through (docs/textchart/textchart-to-html.xsl:507-508) would carry a non-unique key; it can only be descriptive, never the anchor for token-level data."
+    },
+    {
+     "claim": "Segment.Analyses is a reference sequence of IAnalysis, so the same analysis object is legitimately referenced from many positions.",
+     "evidence": "`<class num=\"6\" id=\"Segment\" ...> <rel num=\"5\" id=\"Analyses\" sig=\"IAnalysis\" card=\"seq\"/>`",
+     "source": "liblcm/src/SIL.LCModel/MasterLCModel.xml:259-264",
+     "confidence": "high",
+     "critical": false,
+     "implication": "Model-level confirmation that analysis GUIDs are shared across occurrences."
+    },
+    {
+     "claim": "The IAnalysis at a token position is replaced in place (same segment, same index) when the user glosses/approves the word, so the analysis GUID at a given token changes over time even without baseline edits.",
+     "evidence": "`internal void SetAnalysis(int iSegment, int iAnalysis, IAnalysis analysis) { var seg = SegmentsOS[iSegment]; ... seg.AnalysesRS.Replace(iAnalysis, 1, new ICmObject[] {analysis}); }` and the AnalysisOccurrence.Analysis setter: `Segment.AnalysesRS.Replace(Index, 1, new ICmObject[] {value});` (\"Setter modifies the segment\").",
+     "source": "liblcm/src/SIL.LCModel/DomainImpl/StTxtPara.cs:1078-1090; liblcm/src/SIL.LCModel/DomainServices/AnalysisOccurrence.cs:52-66",
+     "confidence": "high",
+     "critical": true,
+     "implication": "Even ignoring duplicates, keying token data by analysis GUID would lose the link the moment a colleague glosses the word. The (segment, index) position is what stays put."
+    },
+    {
+     "claim": "AnalysisAdjuster adjusts only IAnalysisReference objects it collects from the model — the paragraph's TextTags and ConstChartWordGroups — and nothing else.",
+     "evidence": "`m_oldParaRefs = new HashSet<IAnalysisReference>(); // This adds TextTags that only reference this paragraph m_oldParaRefs.UnionWith(m_para.GetTags()); // This adds ConstChartWordGroups that only reference this paragraph m_oldParaRefs.UnionWith(m_para.GetChartCellRefs());` and the interface doc: \"Interface that multiple diverse classes with similar functions implement ... For now: TextTag and ConstChartWordGroup\".",
+     "source": "liblcm/src/SIL.LCModel/DomainImpl/AnalysisAdjuster.cs:302-307 (also 1434-1438 for the move-paragraph path); liblcm/src/SIL.LCModel/InterfaceAdditions.cs:326-330",
+     "confidence": "high",
+     "critical": true,
+     "implication": "A (segmentGuid, index) pair that FDAT stores in a custom field or JSON is a snapshot FLEx never maintains. Only keys held as fields of a TextTag or ConstChartWordGroup are kept valid. Token-level data must therefore be anchored to one of those objects (or recomputed from them at read time)."
+    },
+    {
+     "claim": "The adjuster keeps (segment, index) references valid under baseline edits: it shifts Begin/End indices by the counts of removed/added analyses, moves an endpoint to a following segment when the index overflows, snaps inexact endpoints to the nearest wordform, and deletes references whose text was entirely deleted.",
+     "evidence": "UpdateAffectedReferences: `if (ibeg >= ifirstAnalysisInSegToFix + m_cRemovedAnalyses) { ibeg -= m_cRemovedAnalyses; iar.ChangeToDifferentIndex(ibeg, true, false); ...}` / `ibeg += m_cAddedAnalyses; AdjustReferenceEndPoint(endSeg, iar, ibeg, true);` / `var actualPoint = new AnalysisOccurrence(begSeg, ibeg - 1).NextWordform(); if (actualPoint == null) { refsToDelete.Add(iar); ...}`; AdjustReferenceEndPoint: `if (newIndex >= seg.AnalysesRS.Count && newSeg != null) { iar.ChangeToDifferentSegment(newSeg, fbeg, !fbeg); newIndex -= seg.AnalysesRS.Count; ...}`; CheckForDeleteableIAR doc: \"Delete any IAnalysisReference objects whose begin and end references fall within the range of indices removed and not added back in\"; DeleteReferences removes TextTags from `owner.TagsOC` and cell parts from `owner.CellsOS`.",
+     "source": "liblcm/src/SIL.LCModel/DomainImpl/AnalysisAdjuster.cs:521-666, 668-688, 691-746",
+     "confidence": "high",
+     "critical": true,
+     "implication": "Yes — FLEx maintains (BeginSegment GUID, BeginAnalysisIndex) on ConstChartWordGroup and TextTag across baseline edits, so a row-reanchoring fallback that reads those values LIVE from the row's first WordGroup is built on keys FLEx itself keeps current."
+    },
+    {
+     "claim": "When segments are deleted or merged, the adjuster re-homes hanging references onto the surviving segment and re-computes their indices (FixHangingReferences); it can also give up and delete a reference it cannot repair.",
+     "evidence": "`if (!iar.BegRef().IsValid) { if (cOldAnalyses > 0 && iFirstSegmentSurviving > 0) { // segment break deleted, try to preserve position in previous segment newSeg = m_para.SegmentsOS[iFirstSegmentSurviving - 1]; iar.ChangeToDifferentSegment(newSeg, true, false); iar.ChangeToDifferentIndex(iar.BegRef().Index + cOldAnalyses, true, false); }` ... `DiscardDeletedRefs(newSeg); //It should be gone, we can't fix it, get rid of it.`",
+     "source": "liblcm/src/SIL.LCModel/DomainImpl/AnalysisAdjuster.cs:878-975",
+     "confidence": "high",
+     "critical": false,
+     "implication": "The Segment GUID part of a stored key is not stable either: after a sentence merge, WordGroups that pointed at the second segment now point at the first. Reconciliation must compare against live WordGroup values, not a stored segment GUID."
+    },
+    {
+     "claim": "ChangeToDifferentIndex clamps the new index into [0, AnalysesRS.Count-1] rather than invalidating the reference, so a WordGroup/TextTag may silently end up on a different word instead of being deleted.",
+     "evidence": "`BeginAnalysisIndex = newIndex; var max = BeginSegmentRA.AnalysesRS.Count - 1; BeginAnalysisIndex = Math.Min(BeginAnalysisIndex, max); BeginAnalysisIndex = Math.Max(BeginAnalysisIndex, 0);` (identical code in TextTag).",
+     "source": "liblcm/src/SIL.LCModel/DomainImpl/OverridesLing_Disc.cs:179-197; liblcm/src/SIL.LCModel/DomainImpl/OverridesLing_Wfi.cs:110-131",
+     "confidence": "high",
+     "critical": false,
+     "implication": "FLEx's key maintenance is best-effort. FDAT should treat WordGroup/TextTag anchors as authoritative but tolerate them drifting; a baseline-text tie-breaker (as FLEx's IsAnalogousTo does) catches gross drift."
+    },
+    {
+     "claim": "Existing Segment objects (and thus their GUIDs) are preserved by the adjuster for unaffected sentences: new Segment objects are inserted only for net-new sentences, and merges delete only the second of two partly surviving segments; ParagraphParser likewise reuses pre-existing Segment objects in order on reparse.",
+     "evidence": "AdjustSegments: \"Since segments after the old last-modified variables must not change ... `m_para.SegmentsOS.Insert(i, m_para.Services.GetInstance<ISegmentFactory>().Create());` ... `var segToDelete = m_para.SegmentsOS[m_iSegFirstModified + 1]; ConcatenateTranslationsAndNotes(...); m_para.SegmentsOS.Replace(m_iSegFirstModified + 1, 1, new ISegment[0]);`\"; header rule 1: \"Any segment whose text is unaffected by edits should be unmodified in every other way\". ParagraphParser.CreateSegment: `Segment unusedSeg = (Segment)m_preExistingSegs.FirstOrDefault(); if (unusedSeg != null) { // Reuse it. ... unusedSeg.BeginOffset = ichMin; return unusedSeg; }`",
+     "source": "liblcm/src/SIL.LCModel/DomainImpl/AnalysisAdjuster.cs:22-24, 422-470; liblcm/src/SIL.LCModel/DomainServices/ITextUtils.cs:793-808",
+     "confidence": "high",
+     "critical": false,
+     "implication": "Segment GUID is a reasonable component of a token key for sentences the user has not edited; it is the index part that moves within an edited sentence."
+    },
+    {
+     "claim": "Make-phrase, Break-phrase and full reparse rewrite Segment.Analyses directly and do NOT invoke AnalysisAdjuster, so ConstChartWordGroup/TextTag indices after the changed word are not adjusted on those paths.",
+     "evidence": "MakePhraseWithNextWord: `Segment.AnalysesRS.Replace(Index, 1 + next.Index - Index, new ICmObject[] {wordform}); ... Paragraph.ParseIsCurrent = false;` BreakPhrase: `Segment.AnalysesRS.Replace(Index, 1, wordforms.Cast<ICmObject>());` — no IAnalysisReference handling in either. FocusBoxController: \"// Joining words renumbers the occurrences. // We need to clear the analysis cache\" / \"// Breaking phrases renumbers the occurrences.\" ParagraphParser.Parse: `if (AnalysesChanged(seg, newAnalyses)) seg.AnalysesRS.Replace(0, seg.AnalysesRS.Count, newAnalyses);`. The adjuster's own comment: \"the reparse might indeed create a phrase, changing the index of later wordforms with unpredictable effects.\"",
+     "source": "liblcm/src/SIL.LCModel/DomainServices/AnalysisOccurrence.cs:252-297, 316-328; FieldWorks/Src/LexText/Interlinear/FocusBoxController.cs:417-437, 443-451; liblcm/src/SIL.LCModel/DomainServices/ITextUtils.cs:426-441; liblcm/src/SIL.LCModel/DomainImpl/AnalysisAdjuster.cs:386-397",
+     "confidence": "high",
+     "critical": true,
+     "implication": "Even FLEx-owned keys can go wrong (point at the neighbouring word) after a phrase join/break in the interlinear tab; the chart then depends on CleanupInvalidChartCells (chart-anchors report 2.13) or the user noticing. FDAT's reconciliation should not assume WordGroup indices are always semantically right — keep the baseline-text tie-breaker and log/flag mismatches rather than silently re-binding."
+    },
+    {
+     "claim": "FLExBridge merges Segment.Analyses as one atomic unit (one side wins wholesale), while ConstChartWordGroup/TextTag index fields merge per object, so after a conflicting Send/Receive a WordGroup's indices can point into the other user's analyses list.",
+     "evidence": "`case DataType.ReferenceSequence: // Trying to merge the Analyses of a segment is problematic. Best to go all-or-nothing, and ensure // we get a conflict report if it fails. if (classInfo.ClassName == \"Segment\" && propertyInfo.PropertyName == \"Analyses\") propStrategy.IsAtomic = true;` (per-object, non-atomic merge of concrete classes is claim 5.4 of the chart-anchors report).",
+     "source": "flexbridge/src/LibFLExBridge-ChorusPlugin/DomainServices/FieldWorksMergeServices.cs:245-252",
+     "confidence": "medium",
+     "critical": false,
+     "implication": "Inferred: index drift is possible across Send/Receive without any local edit. Another reason FDAT should verify a token anchor against baseline text when reconciling after a sync."
+    },
+    {
+     "claim": "FLEx's own chart logic identifies charted tokens by (segment, index) — a HashSet<AnalysisOccurrence> built from each WordGroup's GetOccurrences() — and its persisted 'where was I' bookmark is paragraph index + character offsets in local (non-synced) settings, resolved back to an occurrence by FindWagform.",
+     "evidence": "`var chartedTargets = new HashSet<AnalysisOccurrence>(); foreach (var cellPart in m_chart.RowsOS.SelectMany(row => row.CellsOS.OfType<IConstChartWordGroup>())) chartedTargets.UnionWith(cellPart.GetOccurrences());` ... `new Tuple<int, int>(point.Segment.Hvo, point.Index)`. Bookmark: `m_propertyTable.SetProperty(BookmarkPropertyName(\"IndexOfParagraph\"), ... LocalSettings ...); ...\"CharBeginOffset\" ... \"CharEndOffset\"`; `FindWordformAtBookmark ... curSeg.FindWagform(ibeg - segOffset, iend - segOffset, out fExactMatch)`.",
+     "source": "FieldWorks/Src/LexText/Discourse/ConstituentChartLogic.cs:317-336, 860-883; FieldWorks/Src/LexText/Interlinear/InterAreaBookmark.cs:56-58, 115-123",
+     "confidence": "high",
+     "critical": false,
+     "implication": "FLEx has no token GUID either; where it must persist a token position outside the model it uses paragraph index + char offsets and re-resolves by content. FDAT's composite key (segment GUID + index, with baseline text as check) mirrors FLEx's own practice."
+    },
+    {
+     "claim": "FLEx's own notion of 'the same WordGroup after changes' is content-based: same column and same baseline text of each occurrence.",
+     "evidence": "`public bool IsAnalogousTo(IConstChartWordGroup otherWordGrp) { ... if (this.ColumnRA != otherWordGrp.ColumnRA) return false; var myWordforms = this.GetOccurrences(); ... return !myWordforms.Where((t, i) => t.BaselineText.Text != otherWordforms[i].BaselineText.Text).Any(); }` (\"Mostly designed for testing\").",
+     "source": "liblcm/src/SIL.LCModel/DomainImpl/OverridesLing_Disc.cs:80-100",
+     "confidence": "high",
+     "critical": false,
+     "implication": "Supports adding column GUID + baseline text of the first word to FDAT's row re-anchoring fallback as a tie-breaker."
+    },
+    {
+     "claim": "TextTag is the FLEx-native, GUID-bearing object that anchors data to a token range by (BeginSegment, EndSegment, BeginAnalysisIndex, EndAnalysisIndex) and is owned by the text (StText.Tags); it is maintained by AnalysisAdjuster identically to ConstChartWordGroup.",
+     "evidence": "`<class num=\"22\" id=\"TextTag\" ...> <rel num=\"1\" id=\"BeginSegment\" sig=\"Segment\" card=\"atomic\"/> <rel num=\"2\" id=\"EndSegment\" .../> <basic num=\"3\" id=\"BeginAnalysisIndex\" sig=\"Integer\"> \"These indices refer to the index of an IAnalysis object in a Segment.Analyses sequence.\" ... <rel num=\"5\" id=\"Tag\" sig=\"CmPossibility\" card=\"atomic\"/>`; StText: `<owning num=\"3\" id=\"Tags\" sig=\"TextTag\" card=\"col\"/>`; TextTag implements BegRef/EndRef/ChangeToDifferentSegment/ChangeToDifferentIndex; adjuster collects `m_para.GetTags()` and DeleteReferences does `owner.TagsOC.Remove(iar as ITextTag)`.",
+     "source": "liblcm/src/SIL.LCModel/MasterLCModel.xml:489, 655-668; liblcm/src/SIL.LCModel/DomainImpl/OverridesLing_Wfi.cs:31-131; liblcm/src/SIL.LCModel/DomainImpl/AnalysisAdjuster.cs:305, 730-746",
+     "confidence": "high",
+     "critical": true,
+     "implication": "If FDAT needs a durable per-token GUID (e.g. for a token-scoped custom field value), create a one-token TextTag (Begin==End) in StText.TagsOC with an FDAT-owned Tag possibility; its GUID is stable and FLEx keeps its (segment, index) current or deletes it when the word is deleted — exactly the lifecycle FDAT wants. PLAN §5 already uses TextTags for bands, so this is the same mechanism."
+    },
+    {
+     "claim": "In the RemoveMissingMarker recreation path the row being recreated contained only the missing-marker cell (and no Notes), so the recreated row has no ConstChartWordGroup at the moment of recreation; only its index and Label/flags carry over.",
+     "evidence": "`if (row.CellsOS.Count > 1 || row.Notes != null) { // Easy case; ... row.CellsOS.Remove(cellPart); return; } // In this case the row will disappear before we can add anything to it! // Save its properties and recreate it after. var irow = row.IndexInOwner; var label = row.Label; ... var newrow = m_rowFact.Create(Chart, irow, label);`",
+     "source": "FieldWorks/Src/LexText/Discourse/ConstituentChartLogic.cs:2426-2470",
+     "confidence": "high",
+     "critical": false,
+     "implication": "The 'first WordGroup BeginSegment + index' fallback cannot fire for this path — there is no WordGroup. For rows that consisted only of a marker, the only re-association keys are chart GUID + row position/Label (+ whatever the user charts into it next)."
+    },
+    {
+     "claim": "FDAT's current renderer keys tokens by a browser-side registry keyed on row index, token kind and ordinal position, and the XSL copies a `<word guid>` attribute to `data-guid` when present; the plan intends that guid to be the analysis GUID.",
+     "evidence": "app.js: \"// Token GUID registry: key shape `${rowIdx}:${kind}:${pos}` → guid\" ... `pair.setAttribute('data-token-guid', guid);`; XSL: `<xsl:if test=\"@guid\"> <xsl:attribute name=\"data-guid\"><xsl:value-of select=\"@guid\"/></xsl:attribute>`; PLAN §4 row for ConstChartWordGroup: \"`<word guid>` per analysis\".",
+     "source": "/home/user/fdat/docs/app.js:261-290; /home/user/fdat/docs/textchart/textchart-to-html.xsl:507-508; /home/user/fdat/desktop/PLAN.md:73, 90",
+     "confidence": "high",
+     "critical": false,
+     "implication": "The sidecar's `guid` on `<word>` should be redefined as the occurrence key (segment GUID + index, plus the parent WordGroup GUID), with the analysis GUID moved to a separate attribute, so `data-guid` is unique per token in the rendered chart."
+    }
+   ],
+   "openQuestions": [
+    "Does FLEx's Tagging view (and its 'delete overlapping tag' logic) tolerate one-token TextTags whose TagRA is an FDAT-owned possibility outside the Text Markup Tags list, or a sub-list of it? Not verified in the sparse checkout (Src/LexText/Interlinear tagging code not read for this question).",
+    "After a phrase join/break in the interlinear tab, does CleanupInvalidChartCells (or anything else) detect WordGroups whose indices now point at the wrong word but are still 'valid' (in range)? The clamping in ChangeToDifferentIndex suggests they are silently kept.",
+    "Does Undo/Redo of a baseline edit restore deleted TextTags/WordGroups with their original GUIDs? (Also open in the chart-anchors report.)",
+    "How does ConstChartWordGroup.GetOccurrences() ordinal (position within the group) behave when the adjuster grows/shrinks a group — is 'WordGroup GUID + ordinal' stable enough, or should FDAT always fall back to a one-token TextTag for per-token data?",
+    "Whether flexlibs/LCM from Python exposes ISegment.Guid and Segment.AnalysesRS indices cheaply enough to emit segment GUID + index for every token at export time (expected yes; not checked in flexlibs source)."
+   ]
   }
  }
 }
