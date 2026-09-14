@@ -48,3 +48,56 @@ From https://software.sil.org/fieldworks/help/technical-documents/ :
 - A per-chart JSON under `<project>/LinkedFiles/Others/fdat/` does sync, provided the project keeps the default Linked Files location and the file stays well under 1 MiB (per-chart files are kilobytes). Merge is whole-file, merging machine wins, with a conflict note; fine for one analyst per chart.
 - Custom field definitions and all model data sync as part of the fwdata split files with per-object, per-field merging, which is why custom fields on chart classes are the better home for per-row values.
 - Anything in `ConfigurationSettings` (except `.fwlayout`), and anything outside the project folder, is per-machine.
+
+## FLEx 9.1 Conceptual Model (Ken Zook, 10 Feb 2026)
+URL: https://downloads.languagetechnology.org/fieldworks/Documentation/FLEx%209.1%20Conceptual%20Model.pdf
+
+§1 project folder: "LinkedFiles directory for storing pictures, media files, etc."; "ConfigurationSettings directory that stores various XML files containing various user settings"; "The 7000072 model number has not changed since FW9.0.1."
+
+§2.9 Custom fields (UI):
+> FLEx allows users to create custom fields in Tools > Configure > Custom Fields for the following classes: LexEntry, LexSense, LexExampleSentence, MoForm …, Segment in interlinear text, RnGenericRec in data notebook.
+> When a user deletes a custom field, all the data will also be deleted.
+> type … These are the options currently supported in the UI: String (Single-line Text … actually stores MultiString, but the UI limits it to one writing system), MultiUnicode, OA (Multiparagraph Text … owning atomic StText), GenDate, RC (List Reference, multiple), RA (List Reference, single), Integer.
+> Note: Segment only offers Single-line Text with first analysis or vernacular.
+Data shapes: `<Custom name="…"><AStr ws="en"><Run ws="en">…</Run></AStr></Custom>`, `<Custom name="…"><AUni ws="en">…</AUni></Custom>`, `<Custom name="…"><objsur guid="…" t="o|r"/></Custom>`, `<Custom name="…" val="…"/>`.
+
+§2.10 Send/Receive data:
+> Although designed for Send/Receive, the format used in Send/Receive may prove more useful than fwdata for certain purposes. … With appropriate mercurial commands, it's possible to make changes to the files and then load those changes into your FLEx project.
+Split layout includes `Linguistics/Discourse (.discourse, .list)`.
+
+§2.7 Styles: "Character styles can be embedded in strings. Styles are stored in the Styles owning property of LangProject in StStyle classes. … The Name is Unicode … the name that is used in Strings in namedStyle attributes."
+
+§2.8 Possibility lists: "Users can also create custom lists for special purposes. … List item properties include a MultiString description, properties for displaying items, etc."
+
+§4.3.5 Pictures: "When inserting a picture, you should normally choose the option to copy the file to the project LinkedFiles\Pictures folder. It will then be backed up with FLEx backups and also included in Send/Receive." `CmFile.InternalPath` "is normally a relative path starting at the project LinkedFiles directory".
+
+§6.2 Segment: "Custom fields are also possible on Segment." Other ELAN properties (BeginTimeOffset, EndTimeOffset, MediaURI, Reference, Speaker) are "not currently covered by FLEx UI".
+
+§6.6 Text Tagging: "When you add a tag, FLEx adds a TextTag object in the Tags owning collection of StText."
+
+§6.7 Discourse Charting: DsDiscourseData owns ConstChartTempl and ChartMarkers lists and the Charts collection; "DsChart is a subclass of CmMajorObject, and both of these are abstract. The only actual subclass … is DsConstChart." DsConstChart: Template, BasedOn, Rows. ConstChartRow: Label, Cells (ConstChartClauseMarker, ConstChartMovedTextMarker, ConstChartTag, ConstChartWordGroup), "Notes – String for compiler notes". A ConstChartTag "has a Column property that references the current column CmPossibility, and a Tag property that references the selected CmPossibility from the Text Chart Markers list. FLEx adds the CmPossibility name in parentheses in a different color".
+
+## FieldWorks 7 XML model (Ken Zook, 16 Jul 2015)
+URL: https://downloads.languagetechnology.org/fieldworks/Documentation/FieldWorks_7_XML_model.pdf
+
+§2.7 Custom fields: the `type` attribute of a CustomField may be "Binary, Boolean, GenDate, Guid, Integer, String, MultiString, Time, Unicode, MultiUnicode, OA, OC, OS, RA, RC, RS" — "Not all of these possibilities are currently supported in the UI." (The file format and LCM accept more than the dialog offers.)
+
+§5.1 Non-shared: "When the project is open in a FieldWorks program, a .lock file is created. When that file exists, if another FieldWorks program from a separate process attempts to open the file, it will be blocked and will give the user an error message that the file is already in use." Saves go to a `.tmp` file, then `.fwdata` → `.bak`, `.tmp` → `.fwdata`.
+§5.2 Shared (FW7 era): sharing mode stored data in an `.fwdb` db4o file (no longer applicable to FW9).
+§6: "Caution: As with any method for modifying the database outside of a FieldWorks program, if you do not know what you are doing, you can inadvertently damage the data. … make sure you first back up your project and then after the changes are made, check your changes carefully".
+
+## Python for FlexTools and FLEx 9.1 (Ken Zook, 16 Aug 2024)
+URL: https://downloads.languagetechnology.org/fieldworks/Documentation/Python%20for%20FlexTools%20and%20FLEx%209.1.pdf
+
+- Minimal access: `flexlibs.FLExInitialize(); project = flexlibs.FLExProject(); project.OpenProject('Name'); … project.CloseProject(); flexlibs.FLExCleanup()`. "If your code needs to modify the FLEx project, the OpenProject method has an optional second parameter, that if set to True, will allow you to make changes to the FLEx project and save them when you CloseProject." Otherwise wrap changes in `cache.MainCacheAccessor.BeginNonUndoableTask()` … `EndNonUndoableTask()` and `cache.ServiceLocator.GetService(IUndoStackManager).Save()`.
+- Custom fields are accessed through `IFwMetaDataCacheManaged(cache.MetaDataCacheAccessor)`: `GetFieldIds()`, `IsCustom(flid)`, `GetOwnClsId/Name`, `GetFieldType`, `GetFieldName`, `GetFieldWs`, `GetFieldListRoot`. "All flids for custom fields use the class ID followed by a 3-digit custom field id which starts at 500 for each class." Field type codes: 2 Integer, 8 GenDate, 13 String, 16 MultiUnicode, 23 OA, 24 RA, 26 RC. Example line for a Segment field: `6500, 6, Segment, 13, Custom Segment String, -1, …`.
+- Objects are created through factories from the ServiceLocator; "When a class is created, it's best to place it in the owning property of its owner before adding other properties". `obj.Delete()` deletes an object and everything it owns; removing an object from an owning property deletes it.
+
+## Technical Notes on FLEx Text Interlinear (Ken Zook, 4 May 2026)
+URL: https://downloads.languagetechnology.org/fieldworks/Documentation/Technical%20Notes%20on%20FLEx%20Text%20Interlinear.pdf
+
+flextext carries FLEx guids for the text, paragraphs, phrases (segments) and words, and `media` elements (guid + location) that map to `CmMediaContainer`/`CmMediaURI` on the Text; "the interlinear-text guid and the media guid are maintained when importing from flextext, but the paragraph guids are not maintained." Segment notes are `Note.Content` MultiStrings.
+
+## Model 7000072 classes and fields (spreadsheet)
+URL: https://downloads.languagetechnology.org/fieldworks/Documentation/MasterFieldWorksModel%20classes%20and%20fields%207000072.xlsx
+Field list agrees with liblcm's MasterLCModel.xml for every chart class checked (DsChart 5122001 Template; DsConstChart 5123001 BasedOn, 5123002 Rows; ConstChartRow 5003001 Notes String … 5003008 Label String; ConstituentChartCellPart Column/MergesAfter/MergesBefore; CmMajorObject 5001 Name, 5002 DateCreated, 5003 DateModified, 5004 Description, 5005 Publications, 5006 HeaderFooterSets; TextTag 22001-22005; CmMediaURI 72001 MediaURI; CmMediaContainer 73002 MediaURIs).
