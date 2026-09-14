@@ -288,3 +288,87 @@ Add to the methods in §2 of the plan:
 Both are per-project rather than per-chart, change independently of the chart, and have their own
 `DateModified` tokens, so cache them separately from the chart export and refresh them on the same
 poll.
+
+## Addendum 5: storing marker styling, grouping and visibility on the markers themselves (2026-09)
+
+Question: can FDAT's marker formatting, grouping and filtering live in the data model, attached to
+the chart markers? Mostly yes, using fields that already exist on `CmPossibility`.
+
+### Styling — use the dormant overlay colour fields
+
+`CmPossibility` carries four colour/underline slots and a visibility flag, all documented as serving
+"overlay functionality" — a FieldWorks-6 era feature that no longer exists in FLEx 9
+(`liblcm/src/SIL.LCModel/MasterLCModel.xml:354-378`):
+
+| Field | Type | Model comment |
+|---|---|---|
+| `ForeColor` | Integer | "ForeColor for overlay functionality." |
+| `BackColor` | Integer | "BackColor for overlay functionality." |
+| `UnderColor` | Integer | "UnderColor for overlay functionality - the color of the 'underline' style when used in Overlays." |
+| `UnderStyle` | Integer (0-127) | "UnderStyle - style of the underline used in overlays functionality." |
+| `Hidden` | Boolean | "Indicates whether overlay bracketing should be hidden or not. True = Hidden." |
+
+A grep across `FieldWorks/Src/LexText` and `FieldWorks/Src/xWorks` finds **no FLEx code reading or
+writing these on possibilities** — consistent with the chart drawing every marker in a fixed orange
+"marker" style from `ConstituentChartStyleInfo.xml` (CA 4.1). So they are native, typed, per-marker,
+synced with `ChartMarkers.list`, keyed by the marker's GUID, and inert in current FLEx: a good home
+for FDAT's marker colours.
+
+Two honest caveats:
+
+- **Dormant is not reserved.** Nothing guarantees SIL will not revive overlays or repurpose these
+  fields. The risk is low, and the downside is cosmetic (a future FLEx feature might colour things
+  unexpectedly), but it is not zero. Record FDAT's values in the JSON backup too, so they survive
+  whatever happens.
+- **These are project-wide.** A marker has one `ForeColor`, so per-chart colour variation cannot
+  live here. If FDAT ever wants a marker styled differently in two charts, that belongs in the
+  chart's own FDAT settings field keyed by marker GUID.
+
+Bold/italic/size have no native per-possibility slot; keep those in FDAT's settings JSON keyed by
+marker GUID.
+
+### Grouping — use the parent items, read-only
+
+The Chart Markers list is already hierarchical, and its top level *is* the grouping: "The top level
+defines a right-click subitem … Lower levels provide actual markers" (`../refs/sil-docs-notes.md`,
+Conceptual Model §6.7). FDAT should read that hierarchy and use the parent items as its groups. That
+is free, native, synced, and editable by the linguist in FLEx's Lists area — one place instead of
+FDAT's invented parallel grouping.
+
+One boundary: FDAT should **read** the hierarchy, not restructure it. Adding or moving parent items
+would change FLEx's right-click menu, which breaks the rule that FDAT only writes data FLEx does not
+reflect. If a user wants a grouping that differs from the list's, that is an FDAT setting keyed by
+marker GUID, not a change to the list.
+
+### Visibility — `Hidden` works, with one judgement call
+
+`Hidden` is the natural slot for "do not render this marker" and needs no new field. Two things to
+weigh before using it:
+
+- Its documented meaning is overlay bracketing, not general visibility, so this is a mild
+  repurposing of a field rather than a pure use of it — the one place in this design that bends the
+  "do not repurpose fields" safety rule. It is defensible because the field is dead in FLEx 9 and the
+  meaning is close.
+- It is **project-wide**, exactly like the colours. FDAT's current UI hides markers per view. If
+  hide/show should vary per chart, `Hidden` cannot express it and the setting belongs in the chart's
+  FDAT field.
+
+Recommendation: use `Hidden` only if "this marker is not interesting in this project" is the real
+intent; otherwise keep visibility in FDAT settings and leave `Hidden` alone.
+
+### Filtering — derive it, do not store it
+
+Filtering is a view operation over data FDAT already has: group membership (the parent item),
+visibility, and marker identity. Store filter *presets* in the chart or project FDAT settings keyed
+by marker GUID; do not add model fields for them.
+
+### Why not custom fields on `CmPossibility`
+
+Technically possible — LCM has no class whitelist — but **it would clutter every list in the
+project**. FLEx's Lists editor builds slices for every custom field whose class is anywhere in the
+edited object's class chain: `EnsureCustomFields` walks `GetBaseClsId` upward and matches
+`interestingClasses.Contains(field.Class)`
+(`FieldWorks/Src/Common/Controls/DetailControls/DataTree.cs:2487-2499`). A custom field declared on
+`CmPossibility` therefore appears on semantic domains, parts of speech, genres — every possibility
+in every list. Do not do it. The chart classes (`ConstChartRow`, `DsConstChart`) have no DataTree in
+FLEx, which is exactly why custom fields are safe there and not here.
