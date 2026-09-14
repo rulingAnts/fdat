@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Ensure the local dev server (http://localhost:5173) is running, then start the Electron shell.
-// Usage: node .local/shell-dev-auto.js [--reset]
+// Usage: node .local/shell-dev-auto.mjs [--reset]
 
 import http from 'node:http';
 import { spawn } from 'node:child_process';

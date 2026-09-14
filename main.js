@@ -1,13 +1,18 @@
+// FDAT desktop shell: a thin Electron window around the online PWA.
+//
+// The renderer is the published web app (PROD_URL) or a local dev server
+// (FDAT_SHELL_URL). Nothing privileged is exposed to the page: no preload, no
+// node integration. See desktop/PLAN.md for the FLEx-integrated successor.
 const { app, BrowserWindow, shell, session } = require('electron');
+const path = require('path');
+const { pathToFileURL } = require('url');
 
 const PROD_URL = 'https://rulingants.github.io/fdat/';
-const path = require('path');
+const DEV_URLS = ['http://localhost:5173/', 'http://127.0.0.1:5173/'];
 const START_URL = process.env.FDAT_SHELL_URL || PROD_URL;
-const ALLOWED = [
-  PROD_URL,
-  'http://localhost:5173/',
-  'http://127.0.0.1:5173/'
-];
+// Navigation is allowed within the published app, the default dev server, and
+// whatever START_URL points at (so a custom PORT for the dev server also works).
+const ALLOWED = [PROD_URL, ...DEV_URLS, START_URL.replace(/\/?$/, '/')];
 
 function isAllowed(url) {
   return ALLOWED.some(p => url.startsWith(p));
@@ -53,17 +58,17 @@ function createWindow() {
         return { action: 'deny' };
       }
     } catch (_) { /* ignore parse errors */ }
-    
+
     // Allow data URLs for export functionality
     if (url.startsWith('data:text/html')) {
       return { action: 'allow' };
     }
-    
+
     // Allow empty URLs for creating blank windows (export functionality)
     if (url === '' || url === 'about:blank') {
       return { action: 'allow' };
     }
-    
+
     if (isAllowed(url)) return { action: 'allow' };
     shell.openExternal(url);
     return { action: 'deny' };
@@ -85,7 +90,6 @@ function createWindow() {
 
   function showErrorPage(errCode, errDesc, failingUrl) {
     try {
-      const { pathToFileURL } = require('url');
       const fileUrl = pathToFileURL(path.join(__dirname, 'assets', 'shell-error.html')).toString();
       const qs = new URLSearchParams({
         target: START_URL,
@@ -127,7 +131,9 @@ function createWindow() {
     if (!splash.isDestroyed()) splash.close();
   };
   win.webContents.on('did-finish-load', reveal);
-  win.webContents.on('did-fail-load', (_evt, errorCode, errorDescription, validatedURL) => {
+  win.webContents.on('did-fail-load', (_evt, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    // Ignore subframe failures and ERR_ABORTED (-3), which fires when a load is superseded, not when it fails.
+    if (!isMainFrame || errorCode === -3) return;
     // For dev retries, keep splash visible. When retries are exhausted (or non-local), load error page; it will trigger did-finish-load => reveal.
     if (!isLocal || devAttempts >= maxAttempts) {
       showErrorPage(errorCode, errorDescription, validatedURL);
@@ -156,8 +162,7 @@ app.whenReady().then(async () => {
   if (resetAll) {
     // Clear both prod and localhost (dev) scopes
     await clearOriginData(PROD_URL);
-    await clearOriginData('http://localhost:5173/');
-    await clearOriginData('http://127.0.0.1:5173/');
+    for (const u of DEV_URLS) await clearOriginData(u);
   } else if (reset) {
     // Clear only the start URL origin
     await clearOriginData(START_URL);
