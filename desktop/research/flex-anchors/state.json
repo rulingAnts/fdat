@@ -2937,6 +2937,113 @@
     "How often a linguist's FLEx session holds unsaved edits on the same DsConstChart/ConstChartRow at the moment FDAT saves (the conflict window is <=~10 s of idle but unbounded during active charting); this decides whether FDAT may write custom fields on chart objects at all while FLEx is open, or must write only FDAT-owned objects.",
     "The commit-log master's write to the .fwdata file is gated by `StartupVersionNumber == ModelVersion`; behaviour when FDAT (flexlibs) and FLEx run different LCM model versions was not examined."
    ]
+  },
+  "gap:5": {
+   "summary": "Answer: FDAT-created TextTags (a \"Salience\" top-level category with band sub-items in LangProject.TextMarkupTags, applied as TextTag objects in StText.Tags) are NOT invisible metadata. They surface in every FLEx view that consumes TextTags: (1) the Complex Concordance's \"Tag\" constraint chooser lists the whole TextMarkupTags list, so \"Salience\" and its bands appear there, and its matcher walks StText.TagsOC and builds a \"ttag\" annotation for every tag, so FDAT spans are hits (and a bare \"any tag\" constraint matches them too); (2) the simple Concordance's \"Tagging\" line uses the same list and searches every TextTag instance by possibility; (3) the Tagging tab shows a \"Salience\" submenu with the bands in the right-click menu (checkable, so colleagues can apply/remove them by hand) and renders each band as a bracketed abbreviation label on an extra tag row under the words of every tagged text; (4) the Lists area \"Text Markup Tags\" tool shows the category and bands as editable list items (rename/reorder allowed; deletion of an in-use type/tag is refused with a message naming the text). Where FDAT tags do NOT leak: the Print view (InterlinPrintVc extends InterlinVc whose AddExtraBundleRows hook is empty; only InterlinTaggingVc overrides it) and the interlinear exports (InterlinearExporter has no TextTag code, FlexInterlinear.xsd has no tag element, all Interlinear XSLTs have zero tag references), so .flextext/Word/OO/HTML/XLingPap outputs are unaffected. A whole-sparse-Src sweep finds only five non-test TextTag consumers (the two concordances, the Tagging tab child/VC, and the Lists deletion guard). Sync placement: TextTags travel inside Linguistics/TextCorpus/Text_<guid>.textincorpus (and the TextMarkupTags list as its own file in the same folder), not in Charting.discourse, and they anchor to Segment + analysis index, not to ConstChartRow. Net for the design: a TextTag anchor is user-visible clutter in the concordances, Tagging tab and Lists area (though not in printouts/exports); if used, expect colleagues to see and be able to apply/remove \"Salience\" bands, and expect the data to live in the text-corpus sync files rather than the chart file.",
+   "findings": [
+    {
+     "claim": "The Complex Concordance's TextTag constraint dialog populates its tag chooser from the entire LangProject.TextMarkupTags list, so an FDAT 'Salience' category and its band sub-items would be listed there for every user.",
+     "evidence": "ComplexConcTagDlg.SetDlgInfo: `m_posPopupTreeManager = new PossibilityComboController(m_tagComboBox, m_cache, m_cache.LanguageProject.TextMarkupTagsOA, ...DefaultAnalysisWritingSystem.Handle, false, ...); m_posPopupTreeManager.LoadPopupTree(...)`. OK handler accepts only a sub-item: `if (tag.OwningPossibility != null) { m_node.Tag = tag; ... } else MessageBox.Show(this, ITextStrings.ksInvalidTagMsg ...)` where ksInvalidTagMsg = \"A valid tag must be selected.\" The insert menu option is added as `m_insertControl.AddOption(new InsertOption(ComplexConcordanceInsertType.TextTag), CanAddConstraint)` and labelled ksComplexConcTag = \"Tag\".",
+     "source": "FieldWorks/Src/LexText/Interlinear/ComplexConcTagDlg.cs:42-83; FieldWorks/Src/LexText/Interlinear/ComplexConcControl.cs:118, 520-527; FieldWorks/Src/LexText/Interlinear/ITextStrings.resx:957-959, 978-980",
+     "confidence": "high",
+     "critical": true,
+     "implication": "An FDAT TextTag anchor is user-visible in the Complex Concordance tag chooser as 'Salience' > band items; it cannot be hidden from colleagues who use that tool."
+    },
+    {
+     "claim": "The Complex Concordance pattern model enumerates every sub-possibility of every top-level TextMarkupTags category as a 'tag' feature symbol labelled by its Abbreviation, and the pattern VC displays a chosen tag node as 'Tag: <abbreviation>'.",
+     "evidence": "`m_featSys.Add(new SymbolicFeature(\"tag\", m_cache.LangProject.TextMarkupTagsOA.PossibilitiesOS.SelectMany(poss => poss.SubPossibilitiesOS, (category, tag) => new FeatureSymbol(tag.Hvo.ToString(...), tag.Abbreviation.BestAnalysisAlternative.Text))) { Description = \"Tag\" }`; VC: `tss = CreateFeatureLine(ITextStrings.ksComplexConcTag, tagPoss.Abbreviation.BestAnalysisAlternative, false)`.",
+     "source": "FieldWorks/Src/LexText/Interlinear/ComplexConcPatternModel.cs:71, 92-95; FieldWorks/Src/LexText/Interlinear/ComplexConcPatternVc.cs:331-335",
+     "confidence": "high",
+     "critical": false,
+     "implication": "Band abbreviations chosen by FDAT become the labels colleagues see in concordance patterns; choose meaningful Name/Abbreviation values because they are user-facing."
+    },
+    {
+     "claim": "Complex Concordance matching walks StText.TagsOC of the paragraph's text and creates a 'ttag' annotation for every valid TextTag (symbol = tag possibility hvo); a TextTag constraint with no specific tag selected matches any TextTag, including FDAT ones.",
+     "evidence": "`foreach (ITextTag tag in m_para.OwnerOfClass<IStText>().TagsOC) { ... ICmPossibility tagType = tag.TagRA; ... Annotation<ShapeNode> tagAnn = new Annotation<ShapeNode>(Range<ShapeNode>.Create(beginAnnotation.Range.Start, endAnnotation.Range.End), FeatureStruct.New(featSys).Symbol(\"ttag\").Symbol(tagType.Hvo.ToString(...)).Value) { Data = tag }; m_shape.Annotations.Add(tagAnn, false); }`. ComplexConcTagNode.GeneratePattern adds the 'tag' feature only `if (Tag != null)`, otherwise the constraint is just type=ttag.",
+     "source": "FieldWorks/Src/LexText/Interlinear/ComplexConcParagraphData.cs:199-222; FieldWorks/Src/LexText/Interlinear/ComplexConcTagNode.cs:17-29",
+     "confidence": "high",
+     "critical": true,
+     "implication": "FDAT salience spans would appear as Complex Concordance search hits — both when a colleague searches for a Salience band explicitly and when they search for 'any tag'. The anchor is not invisible metadata."
+    },
+    {
+     "claim": "The simple Concordance tool offers a 'Tagging' search line whose chooser is built from the same TextMarkupTags list (via InterlinTaggingChild.GetTaggingLists) and whose search iterates all TextTag instances in the project, matching by possibility hvo.",
+     "evidence": "FillLineComboList adds `new ConcordLine(ITextStrings.ksTagging, WritingSystemServices.kwsAnals, ConcordanceLines.kTags)`; for kTags: `m_pOSPopupTreeManager = new POSComboController(m_cbSearchText, m_cache, InterlinTaggingChild.GetTaggingLists(m_cache.LangProject), ...) { Sorted = false }`; UpdateConcordanceForTag: `foreach (var tagInstance in tagRepo.AllInstances()) { if (tagInstance.IsValidRef && tagInstance.TagRA != null && hvoPossToMatch == tagInstance.TagRA.Hvo) matchedTags.Add(tagInstance); }`. GetTaggingLists returns `langProj.TextMarkupTagsOA` (creating the default list if null).",
+     "source": "FieldWorks/Src/LexText/Interlinear/ConcordanceControl.cs:930-932, 543-552, 671-672, 1208-1226; FieldWorks/Src/LexText/Interlinear/InterlinTaggingChild.cs:459-470",
+     "confidence": "high",
+     "critical": true,
+     "implication": "The Salience category and bands appear in the simple Concordance's Tagging chooser as well, and FDAT tags are returned as concordance occurrences."
+    },
+    {
+     "claim": "The Tagging tab's right-click menu shows every top-level TextMarkupTags item that has sub-items as a submenu (named by Name) containing its sub-items (by Name), each checkable and applied/removed by clicking, so colleagues can add or remove FDAT 'Salience' bands by hand.",
+     "evidence": "`foreach (ICmPossibility tagList in list.PossibilitiesOS) { if (tagList.SubPossibilitiesOS.Count > 0) AddListToMenu(menu, tagList); }` ... `var tagSubmenu = new DisposableToolStripMenuItem(tagList.Name.BestAnalysisAlternative.Text); ... foreach (ICmPossibility poss in tagList.SubPossibilitiesOS) { var tagItem = new TagPossibilityMenuItem(poss); tagItem.Click += Tag_Item_Click; tagItem.Text = poss.Name.BestAnalysisAlternative.Text; tagItem.Checked = DoSelectedOccurrencesHaveTag(poss); ... }`",
+     "source": "FieldWorks/Src/LexText/Interlinear/InterlinTaggingChild.cs:399-438",
+     "confidence": "high",
+     "critical": true,
+     "implication": "FDAT band tags are editable by colleagues through FLEx UI; FDAT must tolerate bands added/removed/changed outside FDAT and cannot treat TextTags as private state."
+    },
+    {
+     "claim": "In the Tagging tab each top-level TextMarkupTags category gets its own tag row under the words (row index = category's IndexInOwner), and each tag renders as the possibility's Abbreviation with start/end bracket symbols on the first/last word; the code notes it only handles one layer of tagging per category.",
+     "evidence": "`label = tagPossibility.Abbreviation.BestAnalysisAlternative;` ... `int row = tagPossibility.Owner.IndexInOwner; ... myList[row] = strBldr.GetString(); m_tagStrings.Add(key, myList);` with `StartTagSetup`/`EndTagSetup` adding the (localizable) symbols; comment `// TODO: Someday when we handle more than one layer of tagging, this may change!`. AddExtraBundleRows override emits one string per row for each analysis.",
+     "source": "FieldWorks/Src/LexText/Interlinear/InterlinTaggingVc.cs:101-166, 291-310",
+     "confidence": "high",
+     "critical": false,
+     "implication": "Adding a 'Salience' category adds a new labelled tag row beneath every word in the Tagging tab of any text FDAT has tagged; visually it is bracketed band abbreviations, i.e. visible clutter in a tab colleagues use for their own tagging."
+    },
+    {
+     "claim": "The Print view does NOT render TextTags: InterlinPrintVc derives from InterlinVc (not InterlinTaggingVc); InterlinVc.AddExtraBundleRows is an empty virtual that only InterlinTaggingVc overrides; InterlinPrintVc overrides only LabelRGBFor, GetSegmentLevelTags (StText Title/Source field ids) and Display.",
+     "evidence": "InterlinPrintView.MakeVc: `Vc = new InterlinPrintVc(m_cache);` `public class InterlinPrintVc : InterlinVc`; InterlinVc: `/// Add any extra material after the main bundles. See override on InterlinTaggingVc. internal virtual void AddExtraBundleRows(IVwEnv vwenv, AnalysisOccurrence point) { }`; grep of InterlinPrintView.cs for TextTag/TagsOC hits only `TextTags.kflidContents` (the Text class, not TextTag). Only InterlinTaggingChild sets `Vc = new InterlinTaggingVc(m_cache)`.",
+     "source": "FieldWorks/Src/LexText/Interlinear/InterlinPrintView.cs:27-29, 45-73, 140; FieldWorks/Src/LexText/Interlinear/InterlinVc.cs:1757-1762; FieldWorks/Src/LexText/Interlinear/InterlinTaggingChild.cs:65-67",
+     "confidence": "high",
+     "critical": true,
+     "implication": "No tag brackets appear in the Print view / printouts; FDAT tags do not leak there. (Inferred from the VC class hierarchy and grep; the sparse checkout has no other print path for texts.)"
+    },
+    {
+     "claim": "The interlinear exporter and all Interlinear export templates contain no TextTag handling: InterlinearExporter.cs has no ITextTag/TagsOC/TagRA references and emits only document/interlinear-text/paragraphs/phrases/words/morphemes/item/languages/media-files/objects elements; FlexInterlinear.xsd defines no tag element; every xml2*.xsl has zero matches for 'texttag'/'tagging'.",
+     "evidence": "grep -i 'TextTag|TagsOC|TagRA|ttag' InterlinearExporter.cs -> no hits (only flid variables named 'tag'); WriteStartElement set = document, interlinear-text, paragraphs, paragraph, phrases, phrase, words, word, morphemes, morph, item, run, languages, language, media-files, media, objects, object; xsd xs:element names = document, interlinear-text, objects, object, paragraphs, paragraph, phrases, phrase, words, word, scrMilestone, morphemes, morph, languages, language, media-files, media, item, run; grep -c on all 15 .xsl files = 0.",
+     "source": "FieldWorks/Src/LexText/Interlinear/InterlinearExporter.cs:112-960; FieldWorks/DistFiles/Language Explorer/Export Templates/Interlinear/FlexInterlinear.xsd:3-144; FieldWorks/DistFiles/Language Explorer/Export Templates/Interlinear/xml2Word.xsl, xml2Word2007.xsl, xml2OO.xsl, xml2htm.xsl, xml2XLingPap*.xsl, xml2Verifiable.xsl (0 hits each)",
+     "confidence": "high",
+     "critical": true,
+     "implication": "FDAT TextTags would not appear in .flextext, Word, OpenOffice, HTML, XLingPap or ELAN interlinear exports; the export path is safe from FDAT clutter (and, conversely, FDAT data would not travel with an interlinear export)."
+    },
+    {
+     "claim": "Across the whole sparse FieldWorks Src checkout, the only non-test consumers of ITextTag/TagsOC are the two concordances, the Tagging tab (child + VC) and the Lists deletion guard in FdoUiCore; no xWorks/Discourse/Avalonia code reads TextTags.",
+     "evidence": "grep -rln 'ITextTag\\b|TagsOC|ITextTagRepository|TextTagFactory' FieldWorks/Src --include=*.cs (excluding tests) -> FdoUi/FdoUiCore.cs, Interlinear/ComplexConcParagraphData.cs, Interlinear/ConcordanceControl.cs, Interlinear/InterlinTaggingChild.cs, Interlinear/InterlinTaggingVc.cs.",
+     "source": "FieldWorks/Src (sparse checkout: Src/LexText/Discourse, Src/LexText/Interlinear, Src/Common/*, Src/xWorks, Src/LexText/LexTextControls, Src/FdoUi as listed by grep)",
+     "confidence": "medium",
+     "critical": false,
+     "implication": "The set of views where FDAT tags surface is exactly: Tagging tab, Concordance (Tagging line), Complex Concordance (Tag constraint), and the Lists area. Medium confidence only because folders outside the sparse checkout (e.g. other Src/Utilities, Src/LexText/ParserUi) were not searched."
+    },
+    {
+     "claim": "The Lists area exposes the TextMarkupTags list as an editable 'Text Markup Tags' tool, and FLEx refuses to delete a text-markup type or tag possibility that any TextTag references (message names the text), but does not block renaming or reordering.",
+     "evidence": "toolConfiguration.xml: `<tool label=\"Text Markup Tags\" value=\"textMarkupTagsEdit\" ...><parameters area=\"lists\" clerk=\"TextMarkupTagsList\" ...>`; areaConfiguration.xml: `<clerk id=\"TextMarkupTagsList\"><recordList owner=\"LangProject\" property=\"TextMarkupTags\">`; FdoUiCore.CanDeleteTextMarkupTag: `if (poss.IsOnlyTextMarkupTag) { msg = ksCantDeleteLastTagList; return false; } ITextTag usedTag = ...GetByTextMarkupTag(poss).FirstOrDefault(); if (usedTag != null) { ... msg = string.Format(poss.SubPossibilitiesOS.Count == 0 ? ksCantDeleteMarkupTagInUse : ksCantDeleteMarkupTypeInUse, textName); return false; }`",
+     "source": "FieldWorks/DistFiles/Language Explorer/Configuration/Lists/Edit/toolConfiguration.xml:319-325; FieldWorks/DistFiles/Language Explorer/Configuration/Lists/areaConfiguration.xml:138-139, 449-451; FieldWorks/Src/FdoUi/FdoUiCore.cs:1765-1790",
+     "confidence": "high",
+     "critical": false,
+     "implication": "The 'Salience' category and its bands are visible and editable in Lists; in-use items are protected from deletion (good for anchor stability) but colleagues can rename/reorder them, so FDAT should key on possibility GUIDs, not names."
+    },
+    {
+     "claim": "The model defines TextTag as owned in StText.Tags (collection) with BeginSegment/EndSegment (Segment refs), BeginAnalysisIndex/EndAnalysisIndex (indices into Segment.Analyses) and Tag (CmPossibility ref); LangProject.TextMarkupTags is documented as 'Top eval Possibilities are major tag categories (Syntax, Semantics, RRG, etc.) The actual tags are their SubPossibilities'.",
+     "evidence": "`<owning num=\"3\" id=\"Tags\" sig=\"TextTag\" card=\"col\"/>` on StText; `<class num=\"22\" id=\"TextTag\" ...><rel num=\"1\" id=\"BeginSegment\" sig=\"Segment\" card=\"atomic\"/><rel num=\"2\" id=\"EndSegment\" .../><basic num=\"3\" id=\"BeginAnalysisIndex\" sig=\"Integer\"> ... <rel num=\"5\" id=\"Tag\" sig=\"CmPossibility\" card=\"atomic\"/>`; `<owning num=\"55\" id=\"TextMarkupTags\" card=\"atomic\" sig=\"CmPossibilityList\"><comment><para>Top eval Possibilities are major tag categories ... The actual tags are their SubPossibilities ...`",
+     "source": "liblcm/src/SIL.LCModel/MasterLCModel.xml:489, 655-670, 5344-5348",
+     "confidence": "high",
+     "critical": false,
+     "implication": "TextTags anchor to word spans (segment + analysis index), not to ConstChartRow; a per-row salience band via TextTag would have to be derived from the row's WordGroups' segment ranges, and a two-level category>band list shape is exactly what FLEx expects."
+    },
+    {
+     "claim": "In Send/Receive, TextTags sync inside the per-text file Linguistics/TextCorpus/Text_<guid>.textincorpus (nested with the Text via the generic CmObjectNestingService), and the TextMarkupTags list is written as its own file in the TextCorpus folder — i.e. not in Linguistics/Discourse/Charting.discourse.",
+     "evidence": "`/// Linguistics\\TextCorpus\\Text_guid.textincorpus, where 'guid' is the guid of a Text.`; `var rootElement = new XElement(\"TextInCorpus\"); ... CmObjectNestingService.NestObject(false, textElement, classData, guidToClassMapping); FileWriterService.WriteNestedFile(Path.Combine(textCorpusBaseDir, \"Text_\" + textGuid.ToLowerInvariant() + \".\" + FlexBridgeConstants.TextInCorpus), rootElement);`; list: `langProjElement, FlexBridgeConstants.TextMarkupTags, Path.Combine(textCorpusBaseDir, FlexBridgeConstants.TextMarkupTagsListFilename)`. NestObject nests all owned objects (`NestOwnedObjects`), which includes StText.Tags.",
+     "source": "flexbridge/src/LibFLExBridge-ChorusPlugin/Contexts/Linguistics/TextCorpus/TextCorpusBoundedContextService.cs:25, 48-51, 69-81, 122-124; flexbridge/src/LibFLExBridge-ChorusPlugin/DomainServices/CmObjectNestingService.cs:16-46, 101-109",
+     "confidence": "high",
+     "critical": false,
+     "implication": "A TextTag-based anchor would split FDAT data across the text-corpus files (tags) and the discourse file (chart), merged independently; that is workable but means FDAT's per-row data would not ride with the chart object it conceptually belongs to. (The nesting of Tags inside the Text file is inferred from the generic nesting service, not from a Tags-specific line.)"
+    }
+   ],
+   "openQuestions": [
+    "Whether the newer Avalonia-based UI (Src/xWorks/Avalonia) or any folder outside the sparse checkout renders or exports TextTags; the sweep covered only the checked-out folders.",
+    "Exact text of the Tagging tab's start/end bracket symbols (StartTagSetup/EndTagSetup use localizable resource strings not read here) — only relevant to describing what colleagues see, not to whether they see it.",
+    "Whether the Tagging tab tolerates two tags from different categories on overlapping word ranges without visual corruption (the VC keys rows by category index and comments that only one layer per category is handled); would need a runtime check if FDAT bands overlap user tags.",
+    "Whether SIL's Send/Receive documentation (software.sil.org, blocked here) says anything specific about TextMarkupTags list merge behaviour beyond the generic list handling."
+   ]
   }
  }
 }
