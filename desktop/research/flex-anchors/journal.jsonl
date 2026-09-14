@@ -121,3 +121,5 @@
 {"type":"failed","key":"v2:0b275c0dec292ba2035cd552ef55eb0b98d18af66ef847605195bbe43be28ac7","agentId":"ae332df5291e4686d"}
 {"type":"started","key":"v2:7e7335d1ee653dc5b8b1479b81d2550282a00299106a690ade3a727a0b2b502c","agentId":"a1fc6a3c310471644","label":"synthesize:final","phase":"Synthesize"}
 {"type":"failed","key":"v2:7e7335d1ee653dc5b8b1479b81d2550282a00299106a690ade3a727a0b2b502c","agentId":"a1fc6a3c310471644"}
+{"type":"started","key":"v2:2de41f3bd57443e9e72d71032246eaf2641425af3b1783c5bc114150d353c4b7","agentId":"a7a60a1adbe6d5d6d","label":"verify:gap2#1","phase":"Gap sweep"}
+{"type":"started","key":"v2:4f29fbbdc95bebf60a59aa7e7e7a65510a3abf0f1fe6886ce5ecf2bf66b87b19","agentId":"a9b8ac301637f40b8","label":"verify:gap1#1","phase":"Gap sweep"}
