@@ -123,14 +123,52 @@ So there are two sync-safe places for FDAT data: native LCM objects (best, merge
 
 Everything in the table with a native home should use it: those objects merge properly, other tools (and FLEx itself) can see them, and the data survives re-charting because FLEx keeps the same GUIDs.
 
-### The remainder: a JSON document stored *in* the project
+### The store of record: custom fields on the chart classes
 
-Two sync-safe options for the per-row free text and the chart-level settings; both keep the data inside the project:
+Research since this plan was drafted (see `research/flex-anchors/chart-anchors-report.md` and its
+addenda) settled the remaining question: **custom fields can be created programmatically on
+`ConstChartRow` and `DsConstChart`**, and they sync and merge per object.
 
-1. **A custom field on the interlinear `Text`** ("FDAT data", multi-paragraph text) holding one JSON document per text: `{ version, charts: { <chartGuid>: { columns, cells: { <rowGuid>: {...} }, title, prologue, epilogue, display } } }`. Custom field definitions and values are model data, so they sync and back up with the project, and LCM guarantees the field exists on every machine after the first Send/Receive. The field shows up in the text's Info tab as an opaque JSON block (name it clearly and put it last). Chorus merges it as one string: concurrent edits by two users to the same text's FDAT data conflict wholesale. Keep the document small and per-text so that is rare. *Verify in Phase 0 that the installed FieldWorks version offers custom fields on `Text`* (they are not offered on `ConstChartRow`, `Segment` or `CmPossibility`).
-2. **A JSON file per chart under `LinkedFiles/Others/fdat/`**. Simpler to write (no LCM write transaction), synced as an opaque file, but invisible to FLEx and not covered by FLEx's own backup/restore of the model unless linked files are included. Use this only if custom fields on `Text` turn out to be unavailable.
+- LCM's `AddCustomField` has no class whitelist — it only requires the class to exist. FLEx's
+  *Custom Fields* dialog offers just six classes (LexEntry, LexSense, LexExampleSentence, MoForm,
+  **Segment**, RnGenericRec) and filters out fields on other classes, so FDAT's fields are invisible
+  there but harmless. SIL's own XML-model document confirms the file format accepts more types and
+  classes than the dialog exposes.
+- FLExBridge writes and merges custom properties generically for any concrete class, keyed
+  `Custom_<Class>_<name>`, inside `Linguistics/Discourse/Charting.discourse`; the data fixer that
+  runs before every Send/Receive handles them; no data migration inspects them.
+- Declare on the **concrete** classes (`ConstChartRow`, `DsConstChart`), never on the abstract
+  `DsChart`.
 
-Language-level preferences that are not per-marker (for example a default display preset) can live in the same JSON on a designated notebook record, or simply be repeated per text; do not build a third mechanism for them.
+Recommended shape:
+
+| FDAT data | Field |
+|---|---|
+| Row → salience band | `ConstChartRow` custom **ReferenceCollection** (FDAT enforces ≤1 member) at an FDAT-owned custom list. *Not* ReferenceAtomic: deleting a band would leave a dangling reference, which LCM does not clear for custom atomic refs. |
+| Row → custom-column values | One custom `String` field per FDAT column on `ConstChartRow`, or one `String` field holding a small per-row JSON object. |
+| Marker colour / visibility / order | The marker possibility's own `ForeColor`, `BackColor`, `Hidden` and its position in the Chart Markers list. FLEx stores these but does not render them in the chart. |
+| Per-chart settings (title, prologue, epilogue, display options, column definitions) | A custom `String` field on `DsConstChart` holding JSON; add a custom owning-atomic `StText` field if prologue/epilogue need rich text (it merges per paragraph). |
+
+Known risks to design for: deleting a custom field deletes all its data, and deleting a custom list
+deletes every field that references it. That is what the backup below is for.
+
+### JSON: cache and backup, never the store of record
+
+- **Cache** — per-machine, in FDAT's own app-data folder, never in `LinkedFiles` (syncing derived
+  data only creates churn and conflicts). Invalidate with `DsConstChart.DateModified`, which LCM
+  bumps for any row or cell edit because it walks to the nearest owner that has one, plus the
+  Chart Markers and template list dates, which the chart's own date does not cover. Record the token
+  seen right after FDAT's own saves so the app does not re-export itself in a loop.
+- **Backup** — `<project>/LinkedFiles/Others/fdat/<chartGuid>.<peerId>.json`. The per-peer filename
+  means two colleagues never write the same path, so Chorus never has to merge these files at all.
+  Keep each well under the 1 MiB cap that applies to extensions no Chorus handler claims, and note
+  it syncs only while the project keeps the default Linked Files location. Stamp schema version,
+  project and chart GUIDs, peer id, timestamp and model version. **Restore is always user-initiated
+  and shows a diff first** — a colleague's backup may be older than the project's own data. Store
+  row re-anchoring keys (label, first word group's begin-segment GUID and analysis index, column
+  GUID) beside the row GUIDs, or a restore will not survive a re-chart.
+- Write order on save: custom fields through LCM first, `Save()`, then the backup, so a backup can
+  never claim state the project never had.
 
 ### Data-model safety rules
 
