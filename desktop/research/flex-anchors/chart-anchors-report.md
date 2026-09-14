@@ -144,3 +144,33 @@ Consequences for FDAT:
 - Keep the migration guard in mind: if the project needs a data migration, the peer that is not
   master fails with a migration-forbidden error. FDAT should report "open this project in FLEx once
   to migrate it", which is also what flexlibs intends.
+
+## Addendum 2: refreshing FDAT when FLEx changes the chart (verified in source, 2026-09)
+
+Clarified requirement: FDAT writes only **additive, FDAT-namespaced** data (custom fields on chart
+classes, an FDAT-owned list, or a sidecar file) that the FLEx UI never renders, so FLEx has nothing
+to repaint. The direction that matters is the opposite one: **edits made in FLEx (re-charting, moving
+or merging cells, editing the baseline, adding markers, changing the template) must show up in FDAT.**
+
+What the shared backend gives a reader:
+
+| # | Claim | Evidence | Source |
+|---|---|---|---|
+| R.1 | A peer only learns of other peers' changes inside `Commit` (and at shutdown, for the master). There is no notification, callback or polling loop in the backend. | `GetUnseenForeignChanges` has exactly two call sites: `ShutdownInternal` (master only) and `Commit`. | `liblcm/src/SIL.LCModel/Infrastructure/Impl/SharedXMLBackendProvider.cs:146, 390` |
+| R.2 | `Commit` pulls and applies foreign changes **before** it checks whether this peer has anything to write, so a no-op commit is a full refresh. | In `Commit`: `if (GetUnseenForeignChanges(...)) { … reconciler.ReconcileForeignChanges(); }` runs first; only later comes `if (!HaveAnythingToCommit(newbies, dirtballs, goners, out cfiList) …) { SaveMetadata(metadata); return true; }`. | `SharedXMLBackendProvider.cs:377-436` |
+| R.3 | `UnitOfWorkService.Save()` calls the backend `Commit` unconditionally; the emptiness test only gates the `OnSave` *event*, not the call. | `GatherChanges(...)`; `if (newbies.Count != 0 || …) RaiseSave(undoable);` then unconditionally `if (!m_dataStorer.Commit(realNewbies, dirtballs, goners)) throw …`. | `liblcm/src/SIL.LCModel/Infrastructure/Impl/UnitOfWorkService.cs:287-345` |
+| R.4 | With no local unsaved changes, reconciliation cannot be refused: every rejection test is an intersection with this peer's own newbies/dirtballs/goners, which are empty. | `OkToReconcileChanges()` gathers local changes and returns false only on intersections (`goners.Intersect(m_foreignGoners)`, `commonDirtballs`, …). | `liblcm/src/SIL.LCModel/Infrastructure/Impl/ChangeReconciler.cs:54-80` |
+| R.5 | **Constraint:** `Save()` is illegal while a unit of work is open — it rolls back and throws. flexlibs' `OpenProject(name, writeEnabled=True)` opens a non-undoable task and holds it until `CloseProject()`, so a write-mode session cannot poll. | `CheckReadyForCommit` : `if (m_uowService.CurrentProcessingState != …ReadyForBeginTask) { Rollback(0); throw new InvalidOperationException(message); }`, called at the top of `SaveInternal`. flexlibs: `self.project.MainCacheAccessor.BeginNonUndoableTask()` on write-enabled open. | `UndoStack.cs:239-246`; `UnitOfWorkService.cs:294-301`; `flexlibs/flexlibs/code/FLExProject.py:255-266` |
+| R.6 | FDAT's own writes fit the same session without holding a task open: begin a non-undoable task, change, end it, then `Save()` — the pattern SIL documents for flexlibs. | "Before making changes you want to save, start a NonUndoable task … `BeginNonUndoableTask()` … `EndNonUndoableTask()` … `IUndoStackManager).Save()`". | `../refs/sil-docs-notes.md` (Python for FlexTools and FLEx 9.1) |
+
+**Recommended sidecar pattern** (shared mode; supersedes "read-only snapshot + Refresh button"):
+
+1. Open the project **read-only** — `FLExProject.OpenProject(name)` with no `writeEnabled` — so no unit of work is held open.
+2. **Refresh loop:** every N seconds (or on a renderer request) call `cache.ServiceLocator.GetService(IUndoStackManager).Save()`. With no local changes this writes nothing, pulls every unseen foreign change and reconciles it into the live cache (R.2–R.4). Then re-export the chart XML, compare with the last export, and push to the renderer only when it differs.
+3. **FDAT writes:** `MainCacheAccessor.BeginNonUndoableTask()` → set FDAT custom fields → `EndNonUndoableTask()` → `Save()` (R.6). The task is short-lived, so polling resumes immediately.
+
+Caveats to design for:
+- FDAT sees FLEx's edits only once **FLEx itself saves** (LCM saves on its own cadence and at certain actions), so the lag is bounded by FLEx's save interval, not by the poll interval. Make the poll cheap and do not promise instant updates.
+- Without project sharing there is no refresh path at all: the cache is a startup snapshot. FDAT must then close and reopen the project to see changes, which is slow on a large project — another reason to detect the sharing setting and recommend enabling it.
+- Re-exporting after a refresh can find rows deleted or recreated by FLEx (CA §2), so run the row re-anchoring reconciliation on every refresh, not just at load.
+- If FDAT ever polls while holding local unsaved changes and the same objects were edited in FLEx, reconciliation can be refused; the backend then hands a pending reconciliation to the UI layer (`ILcmUI.ConflictingSave`). Keep write windows short so this window is effectively closed.
