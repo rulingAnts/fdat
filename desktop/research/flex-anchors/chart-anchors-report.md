@@ -502,3 +502,25 @@ If `synced` is false, tell the user their Linked Files folder is outside the pro
 will not reach colleagues, and offer to keep backups locally instead. Do not move the folder —
 FLEx's help says plainly "Do not change the Linked Files folder location" (`../refs/sil-docs-notes.md`),
 and relocating it has side effects on every picture path (`LinkedFilesRootDirSideEffects`).
+
+## Addendum 8: the `fdat` folder under `Others` (settled)
+
+Location: `<LinkedFiles>/Others/fdat/`, resolved via LCM (addendum 7), holding
+`<chartGuid>.<peerId>.json` per addendum 3. The include pattern `LinkedFiles/Others/**.*` is
+recursive, so a subfolder needs no registration anywhere.
+
+Two practical points for the implementation:
+
+- **Mercurial does not track empty directories.** The folder does not appear on a colleague's
+  machine until a file inside it has been committed, so every FDAT install must create it on demand
+  rather than assume Send/Receive delivered it.
+- **A `README.txt` in the folder is worth writing, but only once.** It tells a linguist browsing
+  `Others` what these files are, that FLEx does not use them, and that deleting them costs only the
+  backups. Write it only when absent and never rewrite it: Chorus claims `.txt` and merges it with
+  diff3, which throws on an overlapping conflict, whereas a file created once and never modified can
+  never produce one.
+
+Use a consistent lowercase `fdat` — Windows is case-insensitive but FieldWorks also runs on Linux,
+and Mercurial would treat `FDAT/` and `fdat/` as different paths there.
+
+Implemented in the sidecar as `ensureBackupDir` alongside `linkedFiles`.

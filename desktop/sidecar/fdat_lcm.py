@@ -134,6 +134,37 @@ class LcmSession:
             'fdatBackupDir': os.path.join(others, 'fdat'),
         }
 
+    def ensure_backup_dir(self):
+        """Create <LinkedFiles>/Others/fdat and return its path.
+
+        Two practical points:
+        * Mercurial does not track empty directories, so this folder does not arrive on a
+          colleague's machine by itself -- every install must create it on demand.
+        * The README is written only when absent and never rewritten. Chorus claims .txt and
+          merges it with diff3, which throws on an overlapping conflict; a file that is created
+          once and never modified can never produce one.
+        """
+        info = self.linked_files()
+        path = info['fdatBackupDir']
+        os.makedirs(path, exist_ok=True)
+        readme = os.path.join(path, 'README.txt')
+        if not os.path.exists(readme):
+            with open(readme, 'w', encoding='utf-8') as f:
+                f.write(
+                    "This folder holds backup copies of FDAT (Flex DiscourseChart Analysis Tool)\n"
+                    "annotation data, one file per chart per contributor:\n"
+                    "\n"
+                    "    <chart guid>.<contributor id>.json\n"
+                    "\n"
+                    "The data itself lives in the FieldWorks project, in custom fields on the\n"
+                    "discourse chart and its rows. These files are only a safety net, kept here\n"
+                    "so that Send/Receive carries them to the rest of the team.\n"
+                    "\n"
+                    "FLEx does not use these files, and nothing in FieldWorks refers to them.\n"
+                    "Deleting them loses only the backups, not your chart or your FDAT data.\n"
+                )
+        return {'path': path, 'syncedBySendReceive': info['syncedBySendReceive']}
+
     # -- charts ---------------------------------------------------------------
 
     def charts(self):
@@ -330,6 +361,8 @@ def serve(session, project_name=None):
             return session.charts()
         if method == 'linkedFiles':
             return session.linked_files()
+        if method == 'ensureBackupDir':
+            return session.ensure_backup_dir()
         if method == 'exportChart':
             return session.export_chart_xml(params['guid'])
         raise KeyError('unknown method: ' + method)
