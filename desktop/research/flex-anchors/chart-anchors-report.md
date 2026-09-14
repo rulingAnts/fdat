@@ -236,3 +236,55 @@ after each FDAT save and ignore that one, or the app will re-export itself in a 
 On save: write the custom fields through LCM first, `Save()`, and only then write the JSON backup
 with the token observed after that save. If the LCM write fails, no backup is written, so the backup
 can never claim state the project never had.
+
+## Addendum 4: FDAT must read the possibility lists, not just the chart (design, 2026-09)
+
+Rendering markers needs more than the chart export gives. FLEx's exporter emits a marker as **text
+only** — the possibility's `Abbreviation` in the first analysis writing system, falling back to
+`Name`, wrapped in parenthesis literals — with no GUID and no indication of which group it came
+from (CA 4.1, `FieldWorks/Src/LexText/Discourse/ConstChartVc.cs:277-297`). That is why today's web
+app keys marker settings on the label string it scrapes out of the rendered DOM (`data-listref`),
+invents its own grouping UI, and asks the user to retype abbreviation glosses.
+
+Reading the two lists through LCM removes all three problems.
+
+### What the lists provide
+
+| Source | Gives FDAT |
+|---|---|
+| `DsDiscourseData.ChartMarkersOA` (a `CmPossibilityList`) | Every marker's **GUID** (stable identity across renames), `Name` and `Abbreviation` per writing system, `Description` (a ready-made gloss for FDAT's abbreviations block), the real **hierarchy** — top level is the right-click submenu, lower levels are the markers themselves — and the `ForeColor`/`BackColor`/`Hidden` slots this design uses to store styling and visibility. List order is the display order. |
+| `DsDiscourseData.ConstChartTemplOA` | Column identity by possibility GUID, and the column grouping at **any depth** — the draft's correction table notes FLEx builds one header row per template depth, not always two. |
+
+Both lists are `CmMajorObject`s, so each carries its own `DateModified` — the second cache token in
+addendum 3. Both sync as their own files (`Linguistics/Discourse/ChartMarkers.list`,
+`ConstChartTempl.list`), so a colleague's marker edits arrive through Send/Receive (CA 4.8).
+
+### Keying markers by GUID instead of by label
+
+The sidecar controls the export, so it should emit the **Tag possibility GUID** on each `listRef`
+element. The renderer XSL already passes a `guid` attribute through to `data-guid` on the token, so
+no XSL change is needed. Prefer the possibility GUID over the cell-part GUID: cell parts are
+recreated routinely by ordinary charting (CA §2), while the marker possibility is stable.
+
+Consequences for the renderer's marker panel:
+
+- Style, visibility and order key on the marker GUID, so a rename in FLEx no longer silently orphans
+  FDAT's settings.
+- FDAT's invented "groups" mechanism can be replaced by, or seeded from, FLEx's own list hierarchy.
+- The abbreviations block can prefill `Name`/`Description` from the list instead of asking the user
+  to retype them; "Reset from chart" (rescanning labels) is no longer needed.
+- Markers defined in the list but absent from a given chart can still be listed and styled, which
+  scraping the rendered chart cannot do.
+
+### Bridge API additions
+
+Add to the methods in §2 of the plan:
+
+| Method | Sidecar RPC | Returns |
+|---|---|---|
+| `getChartMarkers()` | `listChartMarkers` | The Chart Markers list as a tree: `{ guid, name, abbreviation, description, foreColor, backColor, hidden, children[] }`. |
+| `getTemplate(chartGuid)` | `getTemplate` | The chart's template as a tree of column groups and leaf columns with GUIDs and names. |
+
+Both are per-project rather than per-chart, change independently of the chart, and have their own
+`DateModified` tokens, so cache them separately from the chart export and refresh them on the same
+poll.
