@@ -29,7 +29,11 @@ Purpose: let a fresh session finish this work without the original conversation.
    unknown extensions per Chorus source; whole-file merge, merging machine wins). Simple fallback.
 5. `ConstChartTag` from an FDAT-owned list renders as a normal marker if its column is a real
    template leaf; text tags would surface in the Tagging tab (poor fit for the framing).
-6. `.lock` blocks a second FieldWorks process; writes via flexlibs `OpenProject(name, True)` or a
+6. Concurrency: `.lock` blocks a second process ONLY when project sharing is off. With FLEx's
+   Project Properties > Sharing tab enabled, LCM promotes a plain XML open to the shared backend
+   (`LcmCache.GetProviderTypeFromProjectId`), so FDAT can read and write while FLEx is open; a
+   non-master peer cannot run a data migration. The setting syncs with S/R (SharedSettings/*.plsx).
+   See the addendum in `chart-anchors-report.md`. Writes via flexlibs `OpenProject(name, True)` or a
    non-undoable task + `IUndoStackManager.Save()`.
 
 ## To finish

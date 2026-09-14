@@ -115,3 +115,32 @@ See `../refs/sil-docs-notes.md` for verbatim quotes. The points that bear on thi
 - The FieldWorks 7 XML model document states the `CustomField` `type` may be any of Binary, Boolean, GenDate, Guid, Integer, String, MultiString, Time, Unicode, MultiUnicode, OA, OC, OS, RA, RC, RS, "not all … currently supported in the UI"; the Conceptual Model (2026) lists the UI's classes (LexEntry, LexSense, LexExampleSentence, MoForm, Segment, RnGenericRec) and types (String, MultiUnicode, OA, GenDate, RC, RA, Integer) and the `<Custom name=…>` storage shapes. Consistent with Q3: the format and LCM are class-agnostic; only the dialog is restricted.
 - The XML model document confirms the `.lock` file: another FieldWorks program from a separate process "will be blocked" while the project is open. The "Python for FlexTools and FLEx 9.1" notes give the write pattern (`OpenProject(name, True)`, or `BeginNonUndoableTask`/`EndNonUndoableTask` + `IUndoStackManager.Save()`) and the custom-field API (`IFwMetaDataCacheManaged`: `GetFieldIds`, `IsCustom`, `GetOwnClsName`, `GetFieldType`, `GetFieldName`, `GetFieldWs`, `GetFieldListRoot`; flid = clid*1000 + 500 + n).
 - The Conceptual Model's discourse section describes `ConstChartRow.Notes` as "String for compiler notes" and shows tags rendered as the possibility name "in parentheses in a different color", matching Q4.
+
+## Addendum: project sharing mode (verified in source, 2026-09)
+
+The owner pointed out that FLEx now supports a shared-project mode for FlexTools. Confirmed, and it
+changes the concurrency story in `desktop/PLAN.md` §7: **FDAT can read and write while FLEx has the
+project open, provided the project has sharing enabled.**
+
+| # | Claim | Evidence | Source |
+|---|---|---|---|
+| S.1 | LCM promotes a plain XML open to the shared backend when the project's sharing setting is on. | `case BackendProviderType.kXML: return LcmSettings.IsProjectSharingEnabled(projectId.ProjectFolder) ? BackendProviderType.kSharedXML : BackendProviderType.kXML;` with the comment "If an xml backend was requested, but the project settings say it should be shared, kSharedXML is used". | `liblcm/src/SIL.LCModel/LcmCache.cs:205-227` (`GetProviderTypeFromProjectId`) |
+| S.2 | The setting is per project, read from the project lexicon settings file. | `IsProjectSharingEnabled(string projectFolder)` builds a `FileSettingsStore` on `LexiconSettingsFileHelper.GetProjectLexiconSettingsPath(projectFolder)` and returns `settings.ProjectSharing`. | `liblcm/src/SIL.LCModel/LcmSettings.cs:66-74` |
+| S.3 | The user toggles it in FLEx: Project Properties → Sharing tab. | `m_enableProjectSharingCheckBox.Checked = m_projectLexiconSettings.ProjectSharing;` … `m_projectLexiconSettings.ProjectSharing = m_enableProjectSharingCheckBox.Checked;` | `FieldWorks/Src/FwCoreDlgs/FwProjPropertiesDlg.cs:139-146, 692, 734` |
+| S.4 | flexlibs documents exactly this as the remedy for a locked project. | "A call to `OpenProject()` may fail with a `FP_FileLockedError` exception if the project is open in Fieldworks (or another application). To avoid this, project sharing can be enabled within the Fieldworks Project Properties dialog. In the Sharing tab, turn on the option 'Share project contents with programs on this computer'." | `flexlibs/flexlibs/code/FLExProject.py:197-224` |
+| S.5 | flexlibs asks for a plain XML project id and relies on the promotion in S.1. | `projId = ProjectId(projectFileName)`; `ProjectId.GetType` defaults to `kXML`. | `flexlibs/flexlibs/code/FLExLCM.py:81-109`; `FieldWorks/Src/Common/FieldWorks/ProjectId.cs:397-418` |
+| S.6 | Mechanism: a global mutex plus a memory-mapped commit log; peers register by process id, one is "Master", and each peer pulls other peers' changes on commit. | `m_commitLogMutex = new GlobalMutex(MutexName)`; `MemoryMappedFile m_commitLog`; `metadata.Peers[m_peerID] = new CommitLogPeer { ProcessID = curProcess.Id, … }`; `GetUnseenForeignChanges(metadata, out foreignNewbies, out foreignDirtballs, out foreignGoners)` in `Commit`. | `liblcm/src/SIL.LCModel/Infrastructure/Impl/SharedXMLBackendProvider.cs:26-120, 377-430, 490-520` |
+| S.7 | Caveat: a non-master peer cannot run a data migration. | `// non-master peers cannot migrate the XML file` … `throw new LcmDataMigrationForbiddenException();` (flexlibs surfaces this as `FP_MigrationRequired`). | `SharedXMLBackendProvider.cs:108-111`; `flexlibs/flexlibs/code/FLExProject.py` (`FP_MigrationRequired`) |
+| S.8 | The sharing setting itself travels with Send/Receive, so a colleague's copy keeps it. | FLExBridge include pattern `CachedSettings/SharedSettings/*.plsx`; SIL's "Using Send/Receive" lists "The LexiconSettings file in SharedSettings" among things included. | `flexbridge/src/LibFLExBridge-ChorusPlugin/Infrastructure/FlexFolderSystem.cs:70`; `../refs/sil-docs-notes.md` |
+
+Consequences for FDAT:
+- Default posture becomes: open read-only; for a save, open with `writeEnabled=True`. If the project
+  is not shared and FLEx holds it, flexlibs raises `FP_FileLockedError` — surface a clear message
+  offering the Sharing-tab remedy rather than failing obscurely.
+- Offer a first-run check: read the project's sharing setting and tell the user to enable it if they
+  want to keep FLEx open alongside FDAT. Do not toggle it silently on the user's behalf.
+- Changes written by FDAT reach an open FLEx through the commit log, but FLEx's chart view will not
+  necessarily refresh on its own; tell the user to switch tools/texts to refresh.
+- Keep the migration guard in mind: if the project needs a data migration, the peer that is not
+  master fails with a migration-forbidden error. FDAT should report "open this project in FLEx once
+  to migrate it", which is also what flexlibs intends.
