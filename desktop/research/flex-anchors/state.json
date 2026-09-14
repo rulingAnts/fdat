@@ -3134,6 +3134,130 @@
     "Whether the shipped FLEx installer is a Release build (so Debug.Fail in CreateSpec for a custom Segment field with a non-magic writing system is compiled out) was assumed from standard .NET Conditional(\"DEBUG\") semantics, not verified against FieldWorks build configuration.",
     "ConstChartVc.Display's default branch falls through to InterlinVc.Display; the claim that no segment-level fragment can ever reach it from the chart root is inferred from the fragment cases in ConstChartVc and the absence of segment fragments in the Discourse sources, not from a runtime trace."
    ]
+  },
+  "gap:7": {
+   "summary": "No. A custom field added programmatically to Text does NOT display in the Text Info tab, and there is no FLEx UI in which a custom field on Text, DsConstChart or ConstChartRow is shown, edited or deleted. The Info tab is a DataTree rooted on the Text object using the Cellar.fwlayout layout Text/FullInformation, which has no customFields placeholder; DataTree (and the newer Avalonia DetailComposer) generate custom-field slices only where a part carries customFields=\"here\"/ref=\"_CustomFieldPlaceholder\", and \"Show Hidden Fields\" only reveals visibility=\"never\" parts already in the layout. The Custom Fields dialog offers Text-and-Words users only Segment and filters existing custom fields to the classes in its combo, so fields on Text/chart classes are neither listed nor deletable there; the Texts browse view generates custom-field columns only from <generate> nodes, of which the Words configuration has none; interlinear line choices enumerate Segment custom fields only; the chart tab renders fixed fragments (existing report 3.5). PLAN.md line 130's assumptions are therefore wrong on two counts: FLEx does not \"offer custom fields on Text\" in its dialog (only Segment for the interlinear area), and a programmatic Text field does not \"show up in the text's Info tab\". Consequences: the field is safe from accidental user edits, but the only removal path is IFwMetaDataCacheManaged.DeleteCustomField (FDAT's own uninstall or a FLExTools/flexlibs script; flexlibs exposes no add/delete helper), and FLEx cannot show the user that FDAT data exists. Inferred, unverified alternative: FLEx loads user layout overrides from <project>/ConfigurationSettings/*.fwlayout and FLExBridge syncs them via CachedSettings/ConfigurationSettings/*.fwlayout, so FDAT could ship an override of Text/FullInformation containing a customFields placeholder to make the field visible (via the class-agnostic CmObject-Detail-Custom part) - but that would also make the JSON user-editable, which is probably undesirable.",
+   "findings": [
+    {
+     "claim": "The Text Info tab is a DataTree (StTextDataTree) that shows the owning Text object (not the StText) with layout name \"FullInformation\".",
+     "evidence": "Words/areaConfiguration.xml guicontrol TextInformationPane: <parameters area=\"textsWords\" clerk=\"interlinearTexts\" ... layout=\"FullInformation\" ...>; InfoPane.cs StTextDataTree.ShowObject: 'if (stText.OwningFlid == TextTags.kflidContents) showObj = stText.Owner; base.ShowObject(showObj, layoutName, layoutChoiceField, showObj, suppressFocusChange);'",
+     "source": "FieldWorks/DistFiles/Language Explorer/Configuration/Words/areaConfiguration.xml:166-173; FieldWorks/Src/LexText/Interlinear/InfoPane.cs:183-227",
+     "confidence": "high",
+     "critical": false,
+     "implication": "The layout that governs what the Info tab shows for a Text is <layout class=\"Text\" type=\"detail\" name=\"FullInformation\"> in Cellar.fwlayout."
+    },
+    {
+     "claim": "The Text/FullInformation layout contains no part with a customFields attribute (nor ref=\"_CustomFieldPlaceholder\"); the only layouts with that hook are LexEntry, LexSense, Morphology (MoForm etc.) and Notebook (RnGenericRec).",
+     "evidence": "Cellar.fwlayout lines 62-75 list only TitleAllWs, AbbreviationAllWs, SourceAllWs, IsTranslated, Media, Genres, CommentAllWs, DateCreated, DateModified, NotebookSection. grep customFields over Configuration hits only LexSense.fwlayout:43,57; LexEntry.fwlayout:26; Morphology.fwlayout:73,88,101,116,129,142; Notebook.fwlayout:33-407 (12 hits); ViewsLayout.xsd (schema).",
+     "source": "FieldWorks/DistFiles/Language Explorer/Configuration/Parts/Cellar.fwlayout:62-75; FieldWorks/DistFiles/Language Explorer/Configuration/Parts/LexEntry.fwlayout:26; .../Parts/Notebook.fwlayout:33",
+     "confidence": "high",
+     "critical": true,
+     "implication": "A custom field on Text has no insertion point in the Info tab layout; PLAN §5 option 1's statement that it 'shows up in the text's Info tab' is false for stock FLEx."
+    },
+    {
+     "claim": "DataTree generates custom-field slices only when a part in the layout carries a customFields attribute; EnsureCustomFields is called from nowhere else. Without such a part, custom fields of the object's class are never enumerated.",
+     "evidence": "ApplyLayout: 'This code looks for the a special part definition with an attribute called \"customFields\" ... If this attribute is found, the custom fields will not be generated [sic - i.e. generated here]. if (XmlUtils.GetOptionalAttributeValue(partRef, \"customFields\", null) != null) { if(!isTestOnly) EnsureCustomFields(obj, template, partRef); continue; }'. EnsureCustomFields iterates FieldDescription.FieldDescriptors(m_cache) for fields with IsCustomField && class in the object's class chain and inserts <part ref=\"Custom\" param=fieldName/> after the placeholder. grep 'EnsureCustomFields' in Src finds only this call site (other hits are unrelated 'customFields' identifiers in LexImport code).",
+     "source": "FieldWorks/Src/Common/Controls/DetailControls/DataTree.cs:2309-2325, 2487-2532",
+     "confidence": "high",
+     "critical": true,
+     "implication": "Stated by code: a programmatically added Text (or DsConstChart/ConstChartRow) custom field is invisible in every DataTree whose layout lacks the placeholder - which is all of them for these classes."
+    },
+    {
+     "claim": "\"Show Hidden Fields\" does not surface custom fields; it only lifts visibility=\"never\" on parts already present in the layout.",
+     "evidence": "'string visibility = \"always\"; if (!m_fShowAllFields) { visibility = XmlUtils.GetOptionalAttributeValue(partRef, \"visibility\", \"always\"); if (visibility == \"never\") return NodeTestResult.kntrNothing; ...'",
+     "source": "FieldWorks/Src/Common/Controls/DetailControls/DataTree.cs:2421-2427",
+     "confidence": "high",
+     "critical": false,
+     "implication": "There is no user toggle that would reveal an FDAT custom field on Text."
+    },
+    {
+     "claim": "The newer Avalonia detail UI behaves the same: a CustomFieldPlaceholder view node is created only from <part customFields=.../> or ref=\"_CustomFieldPlaceholder\" in the imported layout, and WalkCustomFields expands only that node.",
+     "evidence": "XmlLayoutImporter: '// Custom-field placeholder: <part customFields=\"here\"/> or ref=\"_CustomFieldPlaceholder\". if (callerEl.Attribute(\"customFields\") != null || refName == \"_CustomFieldPlaceholder\") { output.Add(MakeLeaf(stableId, ViewNodeKind.CustomFieldPlaceholder, ...'; DetailComposer: 'case ViewNodeKind.CustomFieldPlaceholder: // Runtime expansion of `customFields=\"here\"` from live MDC metadata. WalkCustomFields(node, obj, depth);' and WalkCustomFields enumerates _mdc.GetFieldIds() where IsCustom && class in chain.",
+     "source": "FieldWorks/Src/Common/FwAvalonia/ViewDefinition/XmlLayoutImporter.cs:169-175; FieldWorks/Src/xWorks/Avalonia/Composer/DetailComposer.cs:551-555, 762-787",
+     "confidence": "high",
+     "critical": false,
+     "implication": "The conclusion holds for both the legacy WinForms DataTree and the Avalonia rewrite; the same fwlayout files drive both."
+    },
+    {
+     "claim": "FLEx's Custom Fields dialog never offers Text, DsConstChart or ConstChartRow as a location: the Interlinear (Texts & Words) location offers only Segment; Lexicon offers LexEntry/LexSense/LexExampleSentence/MoForm; Notebook offers RnGenericRec. Existing custom fields on any other class are filtered out of the dialog's list.",
+     "evidence": "'case LocationType.Interlinear: m_locationComboBox.Items.Add(new IdAndString<int>(SegmentTags.kClassId, \"Segment\")); break;' ... 'm_customFields = (from fd in FieldDescription.FieldDescriptors(m_cache) where fd.IsCustomField && GetItem(m_locationComboBox, fd.Class) != null select new FDWrapper(fd, false)).ToList();'",
+     "source": "FieldWorks/Src/xWorks/AddCustomFieldDlg.cs:110-133",
+     "confidence": "high",
+     "critical": true,
+     "implication": "PLAN.md:130's 'Verify ... that the installed FieldWorks version offers custom fields on Text' resolves to NO for the UI; the field can only be created by LCM code (report 3.1). And it can never be seen or deleted in the dialog."
+    },
+    {
+     "claim": "The dialog's Delete path operates only on entries in its filtered m_customFields list (MarkForDeletion -> FieldDescription.UpdateCustomField -> mdc.DeleteCustomField), so a field on an unlisted class cannot be deleted via FLEx UI.",
+     "evidence": "'fd.MarkForDeletion = true;' (line 948) on the selected FDWrapper; 'var deletedFieldList = from fdw in m_customFields where fdw.Fd.IsCustomField && fdw.Fd.MarkForDeletion select fdw.Fd;' (515-517); FieldDescription.UpdateCustomField calls 'mdc.DeleteCustomField(m_id)' (FieldDescription.cs:386). grep MarkForDeletion in Src shows only AddCustomFieldDlg and DeleteCustomList (list-deletion cascade, report 3.6).",
+     "source": "FieldWorks/Src/xWorks/AddCustomFieldDlg.cs:515-517, 938-948; liblcm/src/SIL.LCModel/FieldDescription.cs:336-386; liblcm/src/SIL.LCModel/Infrastructure/IFwMetaDataCacheManaged.cs:106; liblcm/src/SIL.LCModel/Infrastructure/Impl/LcmMetaDataCache.cs:1016",
+     "confidence": "high",
+     "critical": true,
+     "implication": "The only removal path for an FDAT custom field on Text/DsConstChart/ConstChartRow is code calling IFwMetaDataCacheManaged.DeleteCustomField (FDAT uninstall, PLAN rule 5, or a FLExTools script) - or the indirect DeleteCustomList cascade if the field references a custom list that the user deletes."
+    },
+    {
+     "claim": "flexlibs exposes custom-field helpers only for lexicon classes (entry/sense/example/allomorph) and has no AddCustomField/DeleteCustomField wrapper; FDAT must call the LCM IFwMetaDataCacheManaged methods directly through pythonnet.",
+     "evidence": "FLExProject.py defines GetCustomFieldValue(senseOrEntryOrHvo, ...), __GetCustomFieldsOfType(classID), LexiconGetEntryCustomFields, LexiconGetSenseCustomFields, LexiconGetExampleCustomFields, LexiconGetAllomorphCustomFields, ...CustomFieldNamed; grep for AddCustomField/DeleteCustomField returns nothing.",
+     "source": "flexlibs/flexlibs/code/FLExProject.py:938, 1351-1414",
+     "confidence": "high",
+     "critical": false,
+     "implication": "No third-party UI (FLExTools) removes such fields either; FDAT owns the lifecycle end to end."
+    },
+    {
+     "claim": "Browse (list) views can show custom-field columns only where the column configuration contains <generate> nodes; PossibleColumnSpecs comes from PartGenerator.GetGeneratedChildren, which passes through non-generate children unchanged. The Words area configuration contains no <generate> elements, so the Texts list cannot show a Text custom field column.",
+     "evidence": "XmlBrowseViewBaseVc: 'return PossibleColumnSpecs = PartGenerator.GetGeneratedChildren(m_xnSpec.SelectSingleNode(\"columns\"), m_xbv.Cache, vc, (int)ListItemsClass);'; PartGenerator: 'if (child.Name != \"generate\") { result.Add(child); continue; }' then generator.Generate() with restrictions such as \"customOnly\" -> IsCustom(flid). grep '<generate' under Configuration/Words returns nothing; customOnly generate nodes exist only in Reversal.fwlayout (MoForm) and lexicon/notebook configs.",
+     "source": "FieldWorks/Src/Common/Controls/XMLViews/XmlBrowseViewBaseVc.cs:601, 675-706; FieldWorks/Src/Common/Controls/XMLViews/PartGenerator.cs:120-123, 515-560; FieldWorks/DistFiles/Language Explorer/Configuration/Parts/Reversal.fwlayout:525-555",
+     "confidence": "high",
+     "critical": false,
+     "implication": "Neither the Texts list nor Configure Columns will reveal the FDAT field."
+    },
+    {
+     "claim": "Interlinear line configuration enumerates custom fields of Segment only; the interlinear exporter writes custom-field items only for those lines. RecordClerk's custom-field scan is an export-time name check for notebook/lexicon classes.",
+     "evidence": "InterlinLineChoices.GetCustomLineOptions: 'var classId = m_cache.MetaDataCacheAccessor.GetClassId(\"Segment\"); ... foreach (int flid in mdc.GetFields(classId, false, ...)) { if (!mdc.IsCustom(flid)) continue; customLineOptions.Add(...)'; RecordClerk.AreCustomFieldsAProblem(new int[] { RnGenericRecTags.kClassId }) under areaChoice == \"notebook\".",
+     "source": "FieldWorks/Src/LexText/Interlinear/InterlinLineChoices.cs:596-609; FieldWorks/Src/LexText/Interlinear/InterlinearExporter.cs:134-137; FieldWorks/Src/xWorks/RecordClerk.cs:1167-1200",
+     "confidence": "high",
+     "critical": false,
+     "implication": "Segment custom fields ARE user-visible in FLEx (interlinear lines), unlike Text/chart fields - relevant only if FDAT ever wanted visible per-segment data, which the owner wants to avoid (baseline-tab level)."
+    },
+    {
+     "claim": "If a placeholder were present, rendering would work for any class: the generated <part ref=\"Custom\" param=fieldName/> resolves to the class-agnostic part CmObject-Detail-Custom (paramType FieldName, editor autoCustom), and MakeAutoCustomSlice picks a slice by field type (String/MultiUnicode/MultiString, Integer, GenDate, references, owning atomic).",
+     "evidence": "StandardParts.xml: '<part id=\"CmObject-Detail-Custom\" type=\"detail\" paramType=\"FieldName\"><slice editor=\"autoCustom\" menu=\"mnuDataTree-Help\" helpTopicID=\"khtpCustomFields\"/>'; SliceFactory: 'case \"autocustom\": slice = MakeAutoCustomSlice(cache, obj, caller, node);' and 'This is invoked when a generated part ref (<part ref=\"Custom\" param=\"fieldName\"/>) invokes the standard slice'. (StandardParts.xml is at DistFiles/Parts/, outside the sparse checkout; read via git grep HEAD.)",
+     "source": "FieldWorks/DistFiles/Parts/StandardParts.xml:26-27 (git HEAD); FieldWorks/Src/Common/Controls/DetailControls/SliceFactory.cs:342-345, 379-395",
+     "confidence": "high",
+     "critical": false,
+     "implication": "Visibility is purely a layout question, not a class restriction."
+    },
+    {
+     "claim": "INFERRED, not verified: FDAT could make the field visible by writing a user override of the Text/FullInformation layout (adding <part ref=\"_CustomFieldPlaceholder\" customFields=\"here\"/>) into <project>/ConfigurationSettings/Text.fwlayout; FLEx loads override files from that folder, and FLExBridge syncs *.fwlayout from CachedSettings/ConfigurationSettings (copied from the project's ConfigurationSettings) to colleagues.",
+     "evidence": "Inventory.LoadUserOverrides: 'string path = UserOverrideConfigurationSettingsPath; ... AddElementsFromFiles(DirectoryUtils.GetOrderedFiles(path, sPattern), version, true);' with UserOverrideConfigurationSettingsPath => LcmFileHelper.GetConfigSettingsDir(m_projectPath) = <project>/ConfigurationSettings; PersistOverrideElement writes '<key-attr>.fwlayout' there (doc: 'layout class=\"LexEntry\" type=\"Detail\" name=\"Full\" ... we want to make a file LexEntry.fwlayout'). FlexFolderSystem: 'IncludePatterns.Add(Path.Combine(\"CachedSettings\", Path.Combine(\"ConfigurationSettings\", \"*.fwlayout\")))'; BaseDomainServices copies to 'CachedSettings/ConfigurationSettings' ('Copying dictionary configuration settings.').",
+     "source": "FieldWorks/Src/XCore/Inventory.cs:221-238, 280-345, 503-505; liblcm/src/SIL.LCModel/LcmFileHelper.cs:33, 63-66; flexbridge/src/LibFLExBridge-ChorusPlugin/Infrastructure/FlexFolderSystem.cs:66; flexbridge/src/LibFLExBridge-ChorusPlugin/Contexts/BaseDomainServices.cs:185",
+     "confidence": "medium",
+     "critical": false,
+     "implication": "A possible (untested) route to give users a visible/deletable handle on FDAT data, at the cost of exposing the JSON to hand edits in the Info tab. The override's version attribute, the 'default$$' vs project-name file pattern, and Avalonia's ViewDefinitionOverrideFileMigrator would all need checking before relying on it."
+    },
+    {
+     "claim": "PLAN §5 option 1 explicitly assumes both UI availability and Info-tab visibility of a Text custom field.",
+     "evidence": "'The field shows up in the text's Info tab as an opaque JSON block (name it clearly and put it last). ... *Verify in Phase 0 that the installed FieldWorks version offers custom fields on `Text`* (they are not offered on `ConstChartRow`, `Segment` or `CmPossibility`).' (Note: Segment IS offered by the dialog, per AddCustomFieldDlg.cs:123-125.)",
+     "source": "/home/user/fdat/desktop/PLAN.md:130",
+     "confidence": "high",
+     "critical": true,
+     "implication": "Both assumptions fail; the option remains technically viable (LCM has no class whitelist, report 3.1; FLExBridge syncs custom props generically, report 3.7) but as an invisible, FDAT-only-managed field. The parenthetical about Segment is also inverted."
+    },
+    {
+     "claim": "LinkedFiles/Others/**.* (as well as AudioVisual and Pictures) is in FLExBridge's include patterns, so PLAN option 2's JSON-file location does sync.",
+     "evidence": "'projectFolderConfiguration.IncludePatterns.Add(Path.Combine(\"LinkedFiles\", \"Others\", \"**.*\"));'",
+     "source": "flexbridge/src/LibFLExBridge-ChorusPlugin/Infrastructure/FlexFolderSystem.cs:61-63",
+     "confidence": "high",
+     "critical": false,
+     "implication": "Corroborates the existing report's appendix; the file-size limits and opaque merge noted there still apply."
+    }
+   ],
+   "openQuestions": [
+    "Does a hand-written override <layout class=\"Text\" type=\"detail\" name=\"FullInformation\" version=...> in <project>/ConfigurationSettings actually load (version attribute must match LayoutCache.LayoutVersionNumber; file pattern 'default$$' vs project name), and does the Avalonia UI's ViewDefinitionOverrideFileMigrator migrate it? Untested.",
+    "How does MakeAutoCustomSlice/DetailComposer render a multi-paragraph (OwningAtomic StText) custom field on Text if ever made visible - DetailComposer's comment says 'OwningAtomic StText read-only paragraphs' in the Avalonia path.",
+    "Is the LCMBrowser developer tool (Src/LCMBrowser) shipped with FLEx installs? It could display any object's custom fields, but nothing in the checked-out Build/ or installer files references it.",
+    "Does the Avalonia Texts area use the same TextInformationPane/FullInformation wiring (only the legacy Words/areaConfiguration.xml was checked)?",
+    "The FieldWorks checkout is sparse; Src outside the listed folders (e.g. other exporters) was searched only via grep of the folders present plus git grep HEAD for StandardParts."
+   ]
   }
  }
 }
