@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Synthetic FLEx "Export Text Chart" sample used by the smoke test.
+     It contains no real language data; the shape mirrors what FLEx exports. -->
+<document>
+  <languages>
+    <language lang="xyz" font="Charis SIL"/>
+    <language lang="en" font="Charis SIL"/>
+  </languages>
+  <chart>
+    <row type="title1">
+      <cell cols="1">#</cell>
+      <cell cols="2">Pre-nuclear</cell>
+      <cell cols="3">Nucleus</cell>
+      <cell cols="1">Post-nuclear</cell>
+      <cell cols="1">Notes</cell>
+    </row>
+    <row type="title2">
+      <cell>Row</cell>
+      <cell>Outer</cell>
+      <cell>Inner</cell>
+      <cell>Subject</cell>
+      <cell>Verb</cell>
+      <cell>Object</cell>
+      <cell>Post</cell>
+      <cell>Notes</cell>
+    </row>
+    <row type="normal" endSent="true">
+      <cell><main><rownum>1a</rownum></main></cell>
+      <cell><main><listRef>PP</listRef><listRef>Adv</listRef><word>kamo</word><word>na</word></main><glosses><gloss>then</gloss><gloss>LOC</gloss></glosses></cell>
+      <cell><main/></cell>
+      <cell><main><word>tama</word></main><glosses><gloss>man</gloss></glosses></cell>
+      <cell><main><clauseMkr>1b</clauseMkr><word>i-la</word></main><glosses><gloss>3SG-go</gloss></glosses></cell>
+      <cell><main><lit noSpaceAfter="true">(</lit><word>bahay</word><lit noSpaceBefore="true">)</lit></main><glosses><gloss>house</gloss></glosses></cell>
+      <cell><main/></cell>
+      <cell><main><note>First row note</note></main></cell>
+    </row>
+    <row type="dependent">
+      <cell><main><rownum>1b</rownum></main></cell>
+      <cell><main><listRef>Adv</listRef><listRef>PP</listRef></main></cell>
+      <cell><main><word>ka</word></main><glosses><gloss>when</gloss></glosses></cell>
+      <cell><main><word>siya</word></main><glosses><gloss>3SG</gloss></glosses></cell>
+      <cell><main><word>um-uwi</word></main><glosses><gloss>AF-return</gloss></glosses></cell>
+      <cell><main/></cell>
+      <cell><main><word>na</word></main><glosses><gloss>already</gloss></glosses></cell>
+      <cell><main/></cell>
+    </row>
+    <row type="speech" endPara="true">
+      <cell><main><rownum>2</rownum></main></cell>
+      <cell><main/></cell>
+      <cell><main/></cell>
+      <cell><main><word>ako</word></main><glosses><gloss>1SG</gloss></glosses></cell>
+      <cell><main><word>sabi</word></main><glosses><gloss>say</gloss></glosses></cell>
+      <cell><main><lit>"</lit><word>oo</word><lit>"</lit></main><glosses><gloss>yes</gloss></glosses></cell>
+      <cell><main/></cell>
+      <cell><main><note>Quoted speech</note></main></cell>
+    </row>
+  </chart>
+</document>

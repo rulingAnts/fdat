@@ -354,6 +354,12 @@
           <xsl:value-of select="count(preceding-sibling::row[not(@type='title1' or @type='title2')]) + 1"/>
         </xsl:attribute>
       </xsl:if>
+      <!-- Pass through an object GUID when the source provides one (e.g. a host reading
+           ConstChartRow objects from FLEx/LCM). FLEx's own export has no guid attributes,
+           in which case the host app assigns its own persistent row GUIDs. -->
+      <xsl:if test="@guid">
+        <xsl:attribute name="data-row-guid"><xsl:value-of select="@guid"/></xsl:attribute>
+      </xsl:if>
       <xsl:apply-templates select="cell"/>
     </tr>
   </xsl:template>
@@ -410,6 +416,9 @@
     <xsl:element name="{$tag}">
       <xsl:if test="@cols">
         <xsl:attribute name="colspan"><xsl:value-of select="@cols"/></xsl:attribute>
+      </xsl:if>
+      <xsl:if test="@guid">
+        <xsl:attribute name="data-cell-guid"><xsl:value-of select="@guid"/></xsl:attribute>
       </xsl:if>
       <xsl:attribute name="class">
         <xsl:text>cell</xsl:text>
@@ -493,6 +502,10 @@
             <!-- Preserve raw listRef label (without adhered punctuation) for downstream UI logic -->
             <xsl:if test="$nm='listRef'">
               <xsl:attribute name="data-listref"><xsl:value-of select="."/></xsl:attribute>
+            </xsl:if>
+            <!-- Token-level object GUID pass-through (see the row template) -->
+            <xsl:if test="@guid">
+              <xsl:attribute name="data-guid"><xsl:value-of select="@guid"/></xsl:attribute>
             </xsl:if>
             <xsl:choose>
               <xsl:when test="$nm='word'">
