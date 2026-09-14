@@ -21,7 +21,8 @@ const JS_FILES = [
   'scripts/gen-checksums.mjs',
   'test/smoke.js',
   'desktop/shell/main.js',
-  'desktop/shell/preload.js'
+  'desktop/shell/preload.js',
+  'desktop/shell/host-glue.js'
 ];
 const XML_FILES = [
   'docs/textchart/textchart-to-html.xsl',

@@ -2,6 +2,8 @@
 
 This is a lightweight, developer‑facing roadmap of features we intend to ship soon. It focuses on the Discourse/Text Chart viewer, persistence, and export pipeline.
 
+> **Direction note (2026‑09):** a FLEx‑integrated Windows desktop app that reads charts, tags and object GUIDs straight from the FieldWorks project (via flexlibs / LCM) is planned as a separate project; see [desktop/PLAN.md](./desktop/PLAN.md). If that lands, item 2 below (import/export and browser storage) is largely superseded: annotations would be keyed by FLEx GUIDs and stored with the project rather than in the browser.
+
 Priority ordering (top = higher priority):
 1) Custom fields (columns, chips, overlays)
 2) Improved import/export and local storage at all levels

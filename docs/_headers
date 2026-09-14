@@ -1,0 +1,15 @@
+# Cloudflare Pages response headers (ignored by GitHub Pages, which serves this as a plain file).
+# The service worker and the app shell must never be served stale, or installed apps
+# would keep running an old version until the browser's heuristic cache expired.
+/sw.js
+  Cache-Control: no-cache
+/index.html
+  Cache-Control: no-cache
+/app.js
+  Cache-Control: no-cache
+/manifest.webmanifest
+  Cache-Control: no-cache
+/textchart/*
+  Cache-Control: no-cache
+/assets/*
+  Cache-Control: public, max-age=604800

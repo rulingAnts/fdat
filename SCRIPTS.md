@@ -16,8 +16,8 @@ Tip: On macOS with zsh, you can run any of these with `npm run <script>` (or `np
   - Use when: You just want to run the desktop app with current defaults.
 
 - shell:web
-  - What: Launches the Electron shell in “web/prod” mode.
-  - Use when: You want the app to load the in-repo web assets (not a dev server).
+  - What: Launches the Electron shell against the published online PWA (same as `start`).
+  - Use when: You want to run the shell exactly as end users get it.
 
 - shell:web:reset
   - What: Same as `shell:web` but clears app storage/service worker/cache first.
@@ -30,7 +30,7 @@ Tip: On macOS with zsh, you can run any of these with `npm run <script>` (or `np
 ## Electron shell + dev server
 
 - shell:dev
-  - What: Runs `.local/shell-dev-auto.js` to bring up the Electron shell against a local dev server (auto-handles server availability).
+  - What: Runs `.local/shell-dev-auto.mjs` to bring up the Electron shell against a local dev server (auto-handles server availability).
   - Use when: You want a one-command flow to run the shell against the dev web server.
 
 - shell:dev:reset
@@ -49,6 +49,16 @@ Tip: On macOS with zsh, you can run any of these with `npm run <script>` (or `np
   - What: Launches the shell pointed at `http://localhost:5999` to exercise the unreachable/error path.
   - Use when: Testing error handling and fallback UI when the server isn’t available.
 
+## Checks and tests
+
+- check
+  - What: Syntax-checks every JavaScript file and (when `xmllint` is installed) verifies the XSL and test fixtures are well-formed.
+  - Use when: Before committing; it is what CI runs first.
+
+- test
+  - What: Runs `test/smoke.js`: serves `docs/`, renders the synthetic chart in headless Chromium and exercises the settings panels.
+  - Use when: After changing `docs/app.js`, the XSL, or the service worker. Needs Playwright (`npm install`, then `npx playwright install chromium` once).
+
 ## Packaging / distribution
 
 - pack
@@ -60,16 +70,16 @@ Tip: On macOS with zsh, you can run any of these with `npm run <script>` (or `np
   - Use when: You want an installable build for your platform.
 
 - dist:win
-  - What: Windows NSIS installer via `electron-builder --win nsis`.
-  - Use when: Building a Windows installer.
+  - What: Windows NSIS installer + portable build via `electron-builder --win` (both targets come from the `build.win.target` config).
+  - Use when: Building the Windows release artifacts.
 
 - dist:win:portable
   - What: Windows portable build via `electron-builder --win portable`.
   - Use when: Building a Windows portable binary without an installer.
 
 - dist:win:all
-  - What: Windows NSIS + portable via `electron-builder --win nsis portable`.
-  - Use when: You want both Windows formats at once.
+  - What: Same two targets spelled out explicitly (`electron-builder --win nsis portable`).
+  - Use when: Kept for continuity; `dist:win` is equivalent.
 
 - dist:mac
   - What: macOS DMG and ZIP (universal) via `electron-builder --mac`.
@@ -86,10 +96,6 @@ Tip: On macOS with zsh, you can run any of these with `npm run <script>` (or `np
 - dist:all
   - What: All platforms (macOS, Windows, Linux) via `electron-builder -mwl`.
   - Use when: CI or cross-platform builds (requires host toolchains/signing where applicable).
-
-- shell:pack / shell:dist
-  - What: Aliases to `electron-builder --dir` and `electron-builder -mwl` respectively (legacy naming).
-  - Use when: Prefer `pack` / `dist` for primary usage; these remain available for continuity.
 
 - dist:checksums
   - What: Generates SHA256 checksum files for every artifact in `dist/` plus an aggregate `checksums.txt`.
@@ -129,8 +135,8 @@ shasum -a 256 "Flex DiscourseChart Analysis Tool (FDAT)-3.0.0-mac-universal.dmg"
 Or compare against `checksums.txt`.
 
 - pwa:icons
-  - What: Generates PWA icons (`scripts/gen-pwa-icons.mjs`).
-  - Use when: You update the app icon and need fresh sizes for the PWA/manifest.
+  - What: Regenerates the PWA icon PNGs in `docs/assets` from `assets/icon.svg` (`scripts/gen-pwa-icons.mjs`, needs `sharp`). Desktop `.icns`/`.ico` icons come from `scripts/gen-icons.mjs` (macOS only, needs `to-ico`).
+  - Use when: You update the app icon and need fresh sizes for the PWA/manifest. Bump `SW_VERSION` in `docs/sw.js` afterwards.
 
 - dev:android_pwa
   - What: Helper for Android PWA dev flows (emulator/device), via `.local/dev-android-pwa.js`.

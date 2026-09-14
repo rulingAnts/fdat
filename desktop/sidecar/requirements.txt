@@ -1,0 +1,2 @@
+flexlibs>=2.0
+pythonnet>=3.0

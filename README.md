@@ -88,6 +88,21 @@ npm install
 npm start  # Launches desktop app (loads online PWA)
 ```
 
+Project layout
+- `docs/` — the web app as published to GitHub Pages: `index.html` (markup + CSS), `app.js` (all application code), `sw.js` (service worker), `manifest.webmanifest`, and `textchart/textchart-to-html.xsl` (the FLEx chart XML → HTML transform).
+- `main.js` + `assets/shell-*.html` — the Electron browser-shell.
+- `.local/` — developer helpers (static dev server, Android emulator flow, shell launcher).
+- `scripts/` — icon and checksum generators, static checks.
+- `test/` — Playwright smoke test and a synthetic chart fixture (no real language data).
+- `desktop/` — plan and starter code for the FLEx-integrated Windows desktop app (destined for its own repository; see `desktop/PLAN.md`).
+
+Checks and tests
+```bash
+npm run check   # syntax-check all JS; well-formedness of the XSL and fixtures (needs xmllint)
+npm test        # browser smoke test: renders test/fixtures/sample-chart.xml in headless Chromium
+```
+`npm test` needs Playwright and a Chromium build: `npm install` then `npx playwright install chromium` (once).
+
 **Note**: The desktop app is now a browser-shell that loads the online PWA from https://rulingants.github.io/fdat/. This means:
 - The app always serves the latest PWA version (no bundled docs folder)
 - Auto-updates are handled by the PWA's service worker
@@ -150,12 +165,13 @@ npm run dist:mac
 npm run dist:all
 ```
 
-The desktop builds are significantly smaller now since they only include the browser-shell (main.js, preload.js, icons) and load the PWA from the online URL. No electron-updater or bundled web app files are needed.
+The desktop builds are small because they only include the browser-shell (`main.js`, icons, splash/error pages) and load the PWA from the online URL. No electron-updater or bundled web app files are needed.
 
 ## Continuous delivery (optional)
 
-- GitHub Pages (docs/): updates on push to main (via .github/workflows/pages.yml).
-- GitHub Releases: tag vX.Y.Z to build and upload Windows installers as Release assets (via .github/workflows/release.yml).
+- GitHub Pages (docs/): updates on push to main (via .github/workflows/pages.yml). When `docs/app.js`, the XSL, or other precached files change, bump `SW_VERSION` in `docs/sw.js` so installed apps pick up the update.
+- Checks (`npm run check` and the smoke test) run on pull requests via .github/workflows/check.yml.
+- GitHub Releases: desktop installers are built locally (`npm run dist:all+checksums`) and uploaded to a release by hand; there is no release workflow yet.
 
 ## License and attribution
 
@@ -170,6 +186,8 @@ Issues and pull requests are welcome:
 - Please avoid attaching real project data; share minimal sample XMLs that reproduce problems.
 
 ## Roadmap ideas
+
+See also [ROADMAP.md](./ROADMAP.md) and the plan for a FLEx-integrated desktop app in [desktop/PLAN.md](./desktop/PLAN.md).
 
 - Code signing for Windows builds
 - Keyboard shortcuts and accessibility improvements

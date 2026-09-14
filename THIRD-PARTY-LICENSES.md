@@ -2,11 +2,11 @@
 
 This application is licensed under the GNU Affero General Public License v3.0 (AGPL‑3.0).
 
-It redistributes the following third‑party components at runtime. Each is used under its respective license; see upstream links for full license texts.
+The desktop builds redistribute the following third‑party component at runtime. It is used under its respective license; see the upstream link for the full license text.
 
 - Electron — MIT License — https://www.electronjs.org/ (source: https://github.com/electron/electron)
-- electron‑updater — MIT License — https://github.com/electron-userland/electron-builder/tree/master/packages/electron-updater
-- electron‑log — MIT License — https://github.com/megahertz/electron-log
+
+Build‑time tools (electron‑builder, sharp, Playwright) are development dependencies and are not shipped in the binaries.
 
 Distribution notes
 - Include this file with distributed binaries (installers, portable, AppImage, DMG/ZIP, NSIS).

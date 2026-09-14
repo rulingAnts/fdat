@@ -1,0 +1,14 @@
+{
+  "name": "fdat-desktop-shell",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Starter Electron shell for the FLEx-integrated FDAT desktop app (see ../PLAN.md).",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "license": "AGPL-3.0-only",
+  "devDependencies": {
+    "electron": "^30.0.0"
+  }
+}
