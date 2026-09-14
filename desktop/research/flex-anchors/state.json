@@ -2711,6 +2711,232 @@
     "Practical size limits of a single TsString run (`<Str><Run ws=…>`) holding a JSON paragraph, and whether JSON characters (quotes, braces) survive TsString normalisation (NFD) and XML escaping unchanged — relevant if FDAT stores GUID-keyed JSON per paragraph.",
     "Custom field names containing spaces (the plan's \"FDAT data\") are accepted by LcmMetaDataCache.AddCustomField (only uniqueness is checked) and used verbatim as merge keys; confirm FLEx tolerates such a name on Text since the dialog never sees it."
    ]
+  },
+  "gap:3": {
+   "summary": "LCM's back-reference machinery does NOT clear custom ReferenceAtomic properties when the target object is deleted (only built-in atomic refs, via generated per-class RemoveAReferenceCore; LexEntry is the one hand-written exception, and even it only catches values set in the current session because disk-loaded custom atomic values are never registered as incoming refs). Custom ReferenceCollection/ReferenceSequence properties ARE cleared generically, because the vector object itself is the IReferenceSource and registers/deregisters on fluff-up. A dangling custom atomic ref is therefore persisted as <Custom name=...><objsur t=\"r\"/></Custom>, reloads as a bare CmObjectId, and the next read through DomainDataByFlid/flexlibs throws KeyNotFoundException (in-session it returns hvo -2). FLExBridge's CmObjectValidator only checks that the objsur guid parses and t==\"r\" (no existence check), so a dangling objsur is accepted on send and receive; the only cleanup is FixFwData's OriginalFixer (strips any objsur whose guid is absent, including inside <Custom>), which FLExBridge runs only after an actual 3-way merge (PrepareForPostMergeCommit), not on a pull-only SimpleUpdate. Design consequence for FDAT: granular typed custom fields are safe if they are ReferenceCollection (even for single-valued links) or value types; avoid ReferenceAtomic custom fields on ConstChartRow/DsConstChart/Text, or read them defensively (TryGetObject on the guid) and reconcile on load.",
+   "findings": [
+    {
+     "claim": "When an object is deleted, LCM clears references to it by calling RemoveAReference on each registered incoming referrer, which dispatches to a virtual RemoveAReferenceCore that is GENERATED per class only over the model's atomic reference properties; custom atomic reference properties are never inspected.",
+     "evidence": "CmObject.ClearIncomingReferences: 'foreach (var referrer in m_incomingRefs.ToArray()) referrer.RemoveAReference(this);' -> IReferenceSource.RemoveAReference -> RemoveAReferenceCore (base is empty; comment: 'Generated code contains a suitable override of this method for each class that has reference atomic properties'). Template: '#foreach( $prop in $class.AtomicRefProperties) if (m_$prop.NiuginianPropName == target) { $prop.NiuginianPropName = null; return; } #end base.RemoveAReferenceCore(target);'",
+     "source": "liblcm/src/SIL.LCModel/DomainImpl/CmObject.cs:1728-1733, 2135-2151, 3510-3513; liblcm/src/SIL.LCModel/LcmGenerate/RemoveAReferenceCore.vm.cs:15-25",
+     "confidence": "high",
+     "critical": true,
+     "implication": "A ConstChartRow -> salience-possibility (or Text -> FDAT item) custom ReferenceAtomic field is NOT nulled when the possibility is deleted; the dangling reference persists in the row's custom-property value."
+    },
+    {
+     "claim": "LexEntry is the only class with a hand-written RemoveAReferenceCore override that also clears custom atomic properties; no such override exists for ConstChartRow, DsConstChart, Text, StText or any discourse class.",
+     "evidence": "LexEntry override: 'var flid = this.Cache.CustomProperties.Where(x => x.Value == target && x.Key.Item1 == this).Select(y => y.Key.Item2).FirstOrDefault(); if (flid > 0) SetNonModelPropertyForSDA(flid, null, true); base.RemoveAReferenceCore(target);'. Repo-wide grep for RemoveAReferenceCore finds only CmObject.cs, the template, and this LexEntry override (class header at line 769).",
+     "source": "liblcm/src/SIL.LCModel/DomainImpl/OverridesLing_Lex.cs:769, 3418-3427",
+     "confidence": "high",
+     "critical": true,
+     "implication": "FLEx's own custom list-reference fields on lexical entries get special cleanup; discourse/text classes do not. FDAT cannot rely on LCM to keep custom atomic refs on chart objects consistent."
+    },
+    {
+     "claim": "Even where the override exists, it only works for values set in the current session: custom atomic values loaded from the fwdata are stored as CmObjectId surrogates and reading them converts to an hvo WITHOUT registering an incoming reference or replacing the id, whereas generated getters for built-in atomic refs call ConvertIdToAtomicRef which does AddIncomingRef.",
+     "evidence": "Load: 'case ReferenceAtomic: myElement = customPropertyElement.Element(\"objsur\"); if (myElement != null) data = surrRepos.GetId(myElement);'. Read: 'case ReferenceAtomic: retval = ((ICmObjectOrId)retval).GetObject(Services.ObjectRepository).Hvo;' (no AddIncomingRef, dictionary keeps the id). Set path registers refs only when useAccessor: 'if (dataType == ReferenceAtomic) { ... obj.AddIncomingRef(this); }'. Generated getter: 'm_$prop = ConvertIdToAtomicRef(...)' and ConvertIdToAtomicRef: 'var result = ...GetObject(id); ((ICmObjectInternal)result).AddIncomingRef(this);'. EnsureCompleteIncomingRefsFrom for ReferenceAtomic merely calls 'obj.GetObjectProperty(flid); // forces it to be fluffed up'.",
+     "source": "liblcm/src/SIL.LCModel/DomainImpl/CmObject.cs:3273-3277, 2867-2870, 3010-3026, 3577-3582; liblcm/src/SIL.LCModel/LcmGenerate/propaccessors_atomic.vm.cs:49-53; liblcm/src/SIL.LCModel/Infrastructure/Impl/RepositoryAdditions.cs:326-341",
+     "confidence": "high",
+     "critical": true,
+     "implication": "After a project is reopened, the deleted possibility's m_incomingRefs never contains the chart row's custom atomic reference, so ClearIncomingReferences cannot even reach it (inferred from the code paths; no test exercises this). FLEx's delete-warning counts based on ReferringObjects would also miss such referrers (inferred)."
+    },
+    {
+     "claim": "The metadata cache DOES register custom fields as incoming fields of their destination class, so the gap is not in field discovery but in the per-object clearing/registration code.",
+     "evidence": "AddCustomField ends with 'm_customFields.Add(mfr); ConnectMetaFieldRec(mfr);' and ConnectMetaFieldRec -> SetDestClass: 'mfr.m_dstClsid = clid; if (!mfr.Virtual) m_metaClassRecords[clid].m_incomingFields.Add(mfr);'. GetIncomingFields walks m_incomingFields up the base-class chain. EnsureCompleteIncomingRefs iterates GetIncomingFields(ClassID, AllReference) and tolerates deleted custom flids ('This could happen if the (custom) flid was deleted during this session').",
+     "source": "liblcm/src/SIL.LCModel/Infrastructure/Impl/LcmMetaDataCache.cs:205-229, 957-962, 1107-1122; liblcm/src/SIL.LCModel/DomainImpl/CmObject.cs:3555-3571",
+     "confidence": "high",
+     "critical": false,
+     "implication": "Custom reference COLLECTIONS benefit from this registration (see next finding); atomic ones do not because the per-object fluff path skips AddIncomingRef."
+    },
+    {
+     "claim": "Custom ReferenceCollection and ReferenceSequence properties ARE cleared generically when their target is deleted: the LcmReferenceCollection/LcmReferenceSequence object itself implements IReferenceSource, registers an incoming ref on every fluff-up and Add, and its RemoveAReference removes the target and registers the change with the unit of work.",
+     "evidence": "'internal class LcmReferenceCollection<T> : LcmSet<T>, ILcmReferenceCollection<T>, IReferenceSource, IVector'; 'void IReferenceSource.RemoveAReference(ICmObject target) { Remove((T)target); }'; 'FluffUpSideEffects(...) { ((ICmObjectInternal)thingJustFluffed).AddIncomingRef(this); }'; AddObject: 'AddIncomingRef(this)'. LcmSet.Remove: 'm_uowService.RegisterObjectAsModified(MainObject, m_flid, originalValue, newValue); RemoveRefsTo(...)'. EnsureCompleteIncomingRefsFrom for collections/sequences: 'obj.GetVectorProperty(flid).LastOrDefault();' which enumerates via FluffUpObjectIfNeeded. Same pattern for LcmReferenceSequence (lines 1653, 1708-1725, 1836-1842).",
+     "source": "liblcm/src/SIL.LCModel/DomainImpl/Vectors.cs:222-236, 264-269, 443-472, 664, 782-785, 815-831, 1653, 1708-1725, 1836-1842; liblcm/src/SIL.LCModel/Infrastructure/Impl/RepositoryAdditions.cs:342-349",
+     "confidence": "high",
+     "critical": true,
+     "implication": "For row -> band and column-value -> list-item links, a ReferenceCollection custom field (used single-valued) is kept consistent by LCM exactly like built-in refs; this is the safe typed-field choice. Removing an item from a custom collection on ConstChartRow does not trigger the row's auto-delete because RemoveObjectSideEffectsInternal checks 'e.Flid == ConstChartRowTags.kflidCells' (OverridesLing_Disc.cs:31-39)."
+    },
+    {
+     "claim": "A dangling custom atomic reference is written to the fwdata as a normal objsur inside the <Custom> element, and LCM performs no existence check when loading it back.",
+     "evidence": "Write: 'case OwningAtomic: case ReferenceAtomic: var id = (ICmObjectOrId)data; id.Id.ToXMLString(dataType == OwningAtomic, writer);' and ToXMLString emits '<objsur guid=\"...\" t=\"r\"/>'. Load creates an id via surrRepos.GetId(objsurElement) with no lookup. Grep for 'dangling' in SIL.LCModel finds hits only in UnitOfWork.cs and data migrations, none in the XML load path.",
+     "source": "liblcm/src/SIL.LCModel/DomainImpl/CmObject.cs:3128-3131, 3273-3277; liblcm/src/SIL.LCModel/Infrastructure/Impl/CmObjectId.cs:119-125",
+     "confidence": "high",
+     "critical": false,
+     "implication": "The dangling objsur survives save/reload and travels through Send/Receive inside Linguistics/Discourse/Charting.discourse (or wherever the referrer lives)."
+    },
+    {
+     "claim": "Reading a dangling custom atomic reference throws KeyNotFoundException after reload; in the same session in which the target was deleted, get_ObjectProp returns the special hvo -2 (kHvoObjectDeleted). flexlibs' GetCustomFieldValue would raise in both cases.",
+     "evidence": "GetCustomPropertyForSDA calls CmObjectId.GetObject(repo) -> BackendProvider.GetObject -> CmObjectIdentityMap.GetObjectOrSurrogate: 'var result = m_IdentityMap[guid]; if (result is CmObjectId) throw new KeyNotFoundException(\"Key \" + guid.Guid + \" not found in identity map (actually just an ID is present)\");'. If the stored value is the deleted CmObject itself, 'ICmObject ICmObjectOrId.GetObject(ICmObjectRepository repo) { return this; }' and DeleteObject sets 'm_hvo = (int)SpecialHVOValues.kHvoObjectDeleted' (= -2). flexlibs: 'item = self.project.DomainDataByFlid.get_ObjectProp(hvo, fieldID) ... poss = self.ObjectRepository(ICmPossibilityRepository).GetObject(item)'.",
+     "source": "liblcm/src/SIL.LCModel/Infrastructure/Impl/CmObjectIdentityMap.cs:327-336, 340-348 (GetObjectOrSurrogate); liblcm/src/SIL.LCModel/Infrastructure/Impl/BackendProvider.cs:1017-1027; liblcm/src/SIL.LCModel/DomainImpl/CmObject.cs:1695-1716, 3447-3450; liblcm/src/SIL.LCModel/Enumerations.cs:469; flexlibs/flexlibs/code/FLExProject.py:973-978",
+     "confidence": "high",
+     "critical": true,
+     "implication": "FDAT must never read a custom atomic ref via get_ObjectProp naively; a colleague deleting one salience possibility would crash FDAT's chart load unless FDAT wraps reads (e.g. read the guid and TryGetObject) and reconciles."
+    },
+    {
+     "claim": "FixFwData's OriginalFixer removes any objsur (including those nested in <Custom> elements) whose guid is not present in the file, and removes the parent property element if it becomes empty.",
+     "evidence": "'foreach (var objsur in rt.Descendants(\"objsur\")) { ... if (!m_guids.Contains(guidObj)) { ... errorLogger(String.Format(Strings.ksRemovingLinkToNonexistingObject, ...)); m_danglingLinks.Add(objsur); continue; } ... }' then 'objsur.Remove(); if (!parent.Elements().Any()) { // LT-14189: don't keep empty atomic ref property elements ... parent.Remove(); }'. m_guids is filled from every rt guid (lines 358-365). Descendants() is not restricted to model property names, so <Custom> children are covered.",
+     "source": "liblcm/src/SIL.LCModel.FixData/FwDataFixer.cs:222-224, 272-322, 356-365",
+     "confidence": "high",
+     "critical": false,
+     "implication": "Whenever FixFwData actually runs, the dangling custom ref is silently stripped (logged as 'Removing link to nonexisting object'), i.e. the row loses its band value rather than the project being corrupted."
+    },
+    {
+     "claim": "FLExBridge runs FixFwData only after a real 3-way merge (PrepareForPostMergeCommit); a pull-only update or rollback (SimpleUpdate) just restores the project file without fixing.",
+     "evidence": "'public void SimpleUpdate(IProgress progress, bool isRollback) { RestoreProjectFile(progress); }' vs 'public void PrepareForPostMergeCommit(IProgress progress) { RestoreProjectFile(progress); progress.WriteMessage(\"Checking project for merge problems\"); if (RunFixFwData(progress)) { ... PushHumptyOffTheWall(...); } }' with the remark 'This method is not be called at all, if there was no merging.' FLEx only enables S/R if the fix-it app exists: 'display.Enabled = ... FLExBridgeHelper.FixItAppExists' (comment: 'FB needs to call it, after a merge').",
+     "source": "flexbridge/src/LibFLExBridge-ChorusPlugin/Infrastructure/FlexBridgeSynchronizerAdjunct.cs:66-93, 97-124; FieldWorks/Src/LexText/Lexicon/FLExBridgeListener.cs:127-129, 277-278; FieldWorks/Src/Common/FwUtils/FLExBridgeHelper.cs:281, 512, 563-570",
+     "confidence": "high",
+     "critical": true,
+     "implication": "Scenario: user A deletes a possibility referenced by a custom atomic field on a chart row; A's LCM leaves the objsur; A sends; colleague B with no local changes pulls (SimpleUpdate) -> B's fwdata now carries the dangling objsur and nothing strips it until some later merge or a manual 'Find and fix errors'. Only when both sides changed (real merge) does FixFwData clean it. Chart-anchors 3.10's 'FixFwData runs before Send/Receive' should be read as 'after a merge, before commit' (the cited lines 89-100 are PrepareForPostMergeCommit)."
+    },
+    {
+     "claim": "FLExBridge's CmObjectValidator does not check that an objsur target exists; for reference properties (custom or built-in) it only verifies the guid attribute parses and t==\"r\". The nesting service drops dangling OWNING objsurs only.",
+     "evidence": "'private static bool ReferencePropertyIsInvalid(List<XAttribute> objsurAttrs, out string result) { new Guid(objsurAttrs.Single(attr => attr.Name.LocalName == FlexBridgeConstants.GuidStr).Value); var typeAttrValue = objsurAttrs.Single(attr => attr.Name.LocalName == \"t\").Value; if (typeAttrValue != \"r\") { result = \"Has incorrect attribute value for reference property\"; return true; } result = null; return false; }'. Custom properties are routed through the same validators with isCustomProperty only relaxing the 'unrecognized attribute' check (lines 89-93, 128-130). CmObjectNestingService: 'if (!guidToClassMapping.TryGetValue(guid, out classOfOwnedObject)) { // Dangling owning ref to non-existant object. objsurElement.Remove(); continue; }' applied only to objsur with t==\"o\".",
+     "source": "flexbridge/src/LibFLExBridge-ChorusPlugin/DomainServices/CmObjectValidator.cs:86-93, 116-130, 541-560, 633-644; flexbridge/src/LibFLExBridge-ChorusPlugin/DomainServices/CmObjectNestingService.cs:120-136",
+     "confidence": "high",
+     "critical": true,
+     "implication": "A dangling custom reference objsur is accepted by FLExBridge on both send (split/validate) and receive; it is neither rejected nor repaired by the bridge itself, so the file set can legitimately contain it after sync."
+    },
+    {
+     "claim": "Deleting the REFERRER (e.g. the row) is handled correctly for custom fields: DeleteObjectBasics clears the deleted object's own custom owning and reference-vector properties and removes its CustomProperties entries; only the reverse direction (target deleted, referrer survives) is unhandled for atomic refs. Note DeleteObjectBasics explicitly skips ReferenceAtomic ('//case CellarPropertyType.ReferenceAtomic: // Skip it.'), so the deleted referrer's entry may linger in the target's in-memory m_incomingRefs (inferred, in-session only).",
+     "evidence": "'// Clean up optional custom properties, especially owning & ref props. ... foreach (var flid in mdc.GetFields(ClassID, true, AllOwning | AllReference)) { if (!mdc.IsCustom(flid)) continue; ... case OwningAtomic: DeleteObject(); ... case ReferenceCollection: Clear(); case ReferenceSequence: Clear(); } m_cache.CustomProperties.Remove(key);'",
+     "source": "liblcm/src/SIL.LCModel/DomainImpl/CmObject.cs:2531-2573",
+     "confidence": "high",
+     "critical": false,
+     "implication": "FLEx auto-deleting an emptied ConstChartRow does not leave FDAT garbage behind in the file; the FDAT values simply vanish with the row's <rt>."
+    },
+    {
+     "claim": "In-session sets of a custom atomic ref do register an incoming ref (test evidence), but there is no LCM test covering deletion of the target of a custom reference field.",
+     "evidence": "IDomainDataByFlidTests: 'var crefs = person.ReferringObjects.Count; m_sda.SetObjProp(wf.Hvo, m_customAtomicReferenceFlid, person.Hvo); ... Assert.AreEqual(crefs + 1, person.ReferringObjects.Count, \"Wrong number of incoming references.\");'. Grep of the test tree for AddCustomField shows only value/undo/redo tests (IDomainDataByFlidTests, IActionHandlerTests, PropChangedTests, IFwMetaDataCacheTests); none deletes the referenced person/possibility. DomainDataByFlid.SetObjProp -> 'GetInternalInterfaceForObject(hvo).SetProperty(tag, newValue, true)' -> SetCustomPropertyForSDA.",
+     "source": "liblcm/tests/SIL.LCModel.Tests/Application/Impl/IDomainDataByFlidTests.cs:51-57, 1078-1083; liblcm/src/SIL.LCModel/Application/Impl/DomainDataByFlid.cs:112-118; liblcm/src/SIL.LCModel/DomainImpl/CmObject.cs:2122-2125",
+     "confidence": "high",
+     "critical": false,
+     "implication": "The behaviour described above is derived from code reading, not from an executed test; a quick flexlibs/LCM experiment (create custom atomic ref on ConstChartRow, delete the possibility, save, reload, read) would confirm it before committing to a schema."
+    }
+   ],
+   "openQuestions": [
+    "Does FLEx run FixFwData (or any dangling-link check) on project open or before Send/Receive in folders outside the sparse checkout (e.g. Src/LexText/LexTextDll, Src/FwCoreDlgs)? Only the manual Tools > Utilities 'Find and fix errors' (Src/Utilities/FixFwDataDll/ErrorFixer.cs:132) and the post-merge run were found.",
+    "Does FLEx's Lists-tool delete confirmation (ReferringObjects-based) count custom atomic referrers loaded from disk? The code suggests it cannot, since they are never registered as incoming refs; worth confirming in the UI code (CmPossibilityUi / DeleteObjectDlg, not in the sparse checkout).",
+    "Empirical confirmation: create a ReferenceAtomic custom field on ConstChartRow via flexlibs, set it, delete the target possibility with LCM in the same session and in a fresh session, save, reload, and read the value (expect hvo -2 in-session, KeyNotFoundException after reload).",
+    "Why the LexEntry-only override exists (bug id / history) - the shallow clone's git log did not reveal the originating commit; there may be an LT- issue describing the same dangling-custom-ref problem for other classes.",
+    "Chorus 3-way merge behaviour when one branch deletes a possibility and the other adds a custom reference to it: the merged result is repaired by post-merge FixFwData, but whether a conflict report is generated was not examined (chorus repo not cloned).",
+    "Whether LcmCache.CustomProperties (the raw dictionary) is accessible from flexlibs/pythonnet so FDAT could read the stored CmObjectId/guid directly and call TryGetObject instead of get_ObjectProp."
+   ]
+  },
+  "gap:4": {
+   "summary": "Successful-reconcile path from the FLEx user's side: FLEx only notices FDAT's commits inside its own Save/Commit, which the LCM save timer runs unconditionally about every 10 s of user idleness (no unsaved changes needed), so FDAT writes surface within ~10-12 s. SharedXMLBackendProvider.Commit reads the unseen commit-log records, and if ChangeReconciler.OkToReconcileChanges passes, ReconcileForeignChanges builds a non-undoable UOW of create/property-change/delete actions and SimulateRedo()s it: data is patched in place and ordinary PropChanged notifications are broadcast on the UI thread. No MasterRefresh is forced and F5 does not poll the commit log. The Text Chart tab is a RootSite whose native VwRootBox is registered as a PropChanged listener; the chart draws rows via AddLazyVecItems(DsConstChart.Rows) and Notes/Label via AddStringProp, so foreign row add/remove/reorder and Notes/Label edits redraw in place (a deleted row is unregistered before the owner's Rows PropChanged fires, and the rootbox falls back to Reconstruct if the index vanished), while the custom-field-only case DOES produce a PropChanged (the reconciler diffs <Custom> elements too, applies them through the custom-field setters, and emits PropChanged for the custom flid) but the notifier finds no displayed occurrence and does nothing: no redraw, no crash, no visible effect. The Lists editor reloads/updates names on Possibilities/Name/Abbreviation PropChanged, and marker abbreviations in the chart regenerate. The Tagging tab, by contrast, draws from a private tag-string cache filled only at segment load and by its own edits, so foreign TextTag changes are likely stale until Refresh (inferred). The critical design constraint is the conflict rule: a foreign change to ANY object the FLEx user has unsaved edits on (even a different field, e.g. an FDAT custom field on a ConstChartRow the user is annotating, or on DsConstChart while the user is adding rows, since Rows is an OwningSequence) is irreconcilable and pops the modal \"FieldWorks cannot save your changes\" dialog, halting auto-save until the user Refreshes (reverting their unsaved work). Only DateModified and OwningCollection differences are auto-merged on a shared object. Precondition: FDAT becomes a peer only if the project's ProjectSharing setting is on (flexlibs requests kXML, LcmCache upgrades to kSharedXML only then), otherwise open fails with a lock error.",
+   "findings": [
+    {
+     "claim": "On a successful reconcile FLEx does not force a MasterRefresh: the backend builds a non-undoable UnitOfWork of the foreign creations/property-changes/deletions and 'redoes' it, and the ordinary Redo pass fires PropChanged for every applied property change.",
+     "evidence": "SharedXMLBackendProvider.Commit: `if (GetUnseenForeignChanges(...)) { ... IReconcileChanges reconciler = uowService.CreateReconciler(foreignNewbies, foreignDirtballs, foreignGoners); if (reconciler.OkToReconcileChanges()) { reconciler.ReconcileForeignChanges(); ...` ; ChangeReconciler.ReconcileForeignChanges: `var uow = new NonUndoableUnitOfWork(UowService); ... uow.AddAction(objectCreation) ... MakeChangeInfoFor(dirtball, action => { ... uow.AddAction(action); ...}) ... uow.AddAction(new LcmStateChangeObjectDeletion(existingObj, ...)); ... uow.SimulateRedo();` ; SimulateRedo is `base.Redo()`, whose third pass is `m_uowService.SendPropChangedNotifications(GetPropChangeInformation(false));`",
+     "source": "liblcm/src/SIL.LCModel/Infrastructure/Impl/SharedXMLBackendProvider.cs:377-418; liblcm/src/SIL.LCModel/Infrastructure/Impl/ChangeReconciler.cs:200-303; liblcm/src/SIL.LCModel/Infrastructure/Impl/UnitOfWork.cs:286-316, 736-739",
+     "confidence": "high",
+     "critical": true,
+     "implication": "FDAT writes reach an open FLEx window as in-place data patches plus PropChanged notifications, exactly like an Undo/Redo; whatever FLEx views bind to the changed properties redraw, everything else stays as is."
+    },
+    {
+     "claim": "FLEx only sees foreign changes when it calls Commit (from UnitOfWorkService.Save); but the LCM save timer fires every second and calls SaveInternal unconditionally (there is no HasUnsavedChanges check), throttled to >=10 s since the last save and >=2 s since the last user activity (or 5 min of continuous activity), and SaveInternal always calls m_dataStorer.Commit even with empty change sets. So an idle FLEx polls the commit log roughly every 10 s.",
+     "evidence": "`m_saveTimer.Interval = 1000; m_saveTimer.Elapsed += SaveOnIdle;` ; SaveOnIdle: `if (now - m_lastSave < TimeSpan.FromSeconds(10.0)) return; ... if (now - m_ui.LastActivityTime < TimeSpan.FromSeconds(2.0) && now < (m_lastSave + TimeSpan.FromMinutes(5))) return; ... SaveInternal();` ; SaveInternal: `GatherChanges(newbies, dirtballs, goners); ... if (!m_dataStorer.Commit(realNewbies, dirtballs, goners))` (Commit is called regardless of counts); SharedXMLBackendProvider.Commit first runs `GetUnseenForeignChanges(...)` before writing anything.",
+     "source": "liblcm/src/SIL.LCModel/Infrastructure/Impl/UnitOfWorkService.cs:174-177, 226-262, 287-345; liblcm/src/SIL.LCModel/Infrastructure/Impl/SharedXMLBackendProvider.cs:377-392",
+     "confidence": "high",
+     "critical": true,
+     "implication": "Latency from an FDAT save to the FLEx chart updating is ~10-12 s while the FLEx user is idle, longer while they are actively typing; FDAT should not expect instant reflection and should itself Save (Commit) promptly after each edit."
+    },
+    {
+     "claim": "A change to a custom-field-only value DOES generate a PropChanged on the FLEx peer: the reconciler diffs every non-virtual field of a foreign dirtball including custom ones (matching <Custom name=\"...\"> elements) and emits typed LcmXxxPropertyChanged actions whose Redo sets the value through the custom-field setters and whose GetChangeInfo yields PropChanged(hvo, customFlid). On the writing side the custom setter registers the object as modified so it is a dirtball in the commit record.",
+     "evidence": "MakeChangeInfoFor: `foreach (var flid in mdc.GetFields(currentObj.ClassID, true, (int)CellarPropertyTypeFilter.All)) { if (mdc.get_IsVirtual(flid)) continue; ... if (mdc.IsCustom(flid)) { element = (from elt in rtElement.Elements(\"Custom\") where AttrValue(elt, \"name\") == name select elt).FirstOrDefault(); } ...` then per-type `processChangeRecord(new LcmTsStringPropertyChanged(...))` etc.; Redo of a vector/int/string action: `((ICmObjectInternal)m_changedObject).SetProperty(ModifiedFlid, m_newValue, false)` -> CmObject.SetNonModelPropertyForSDA: `if (...IsCustom(flid)) SetCustomPropertyForSDA(flid, newValue, useAccessor)`; multistring Redo: `GetITsMultiStringProperty(ModifiedFlid)).SetAltQuietly(m_ws, m_newValue)`; writer side SetCustomPropertyForSDA: `m_cache.CustomProperties[key] = newValue; if (useAccessor) { ...UnitOfWorkService.RegisterObjectAsModified(this, flid, oldValue, newValue);`",
+     "source": "liblcm/src/SIL.LCModel/Infrastructure/Impl/ChangeReconciler.cs:769-800, 912-990; liblcm/src/SIL.LCModel/Infrastructure/Impl/LcmStateChangingClasses.cs:976-980, 1561-1563; liblcm/src/SIL.LCModel/DomainImpl/CmObject.cs:1224-1232, 2424-2427, 2905-2915, 3008-3013",
+     "confidence": "high",
+     "critical": true,
+     "implication": "Custom-field values FDAT writes on DsConstChart/ConstChartRow are applied in FLEx's in-memory objects within the polling window and PropChanged fires for the custom flid; FDAT-in-FLEx consistency is maintained without restarting FLEx."
+    },
+    {
+     "claim": "The Text Chart body is a RootSite whose native VwRootBox registers itself as a PropChanged listener with the main SDA; the rootbox dispatches each PropChanged to the notifiers for that hvo and a notifier regenerates only the displayed occurrences of that property, doing nothing if the property is not displayed. Hence a foreign change to a custom field on a chart row/chart causes no redraw and no error, whereas rows/cells/notes/labels, which the VC displays via AddLazyVecItems(kflidRows), MakeCells and AddStringProp(kflidNotes/kflidLabel), regenerate in place.",
+     "evidence": "ConstChartBody.MakeRoot: `m_rootb.DataAccess = Cache.MainCacheAccessor; m_rootb.SetRootObject(m_hvoChart, Vc, ConstChartVc.kfragChart, StyleSheet);` ; VwRootBox::putref_DataAccess: `CheckHr(psda->AddNotification(this));` ; DomainDataByFlid.AddNotification: `m_uowService.AddNotification(nchng);` ; VwRootBox::PropChanged dispatches `vpanote[i]->PropChanged(hvo, tag, ivMinDisp, cvIns, cvDel)`; VwNotifier::PropChanged: `GetPropOccurrences(tag, ivMin, vpbrec); // If it is not a property being displayed in this notifier at all, we have nothing to do. ... if (0 == vpbrec.Size()) { Cleanup(...); return S_OK; }` then `// Regenerate that part of the display`; ConstChartVc: `vwenv.AddLazyVecItems(DsConstChartTags.kflidRows, this, kfragChartRow);`, `case kfragChartRow: ... MakeCells(vwenv, hvo);`, `case kfragNotesString: vwenv.AddStringProp(ConstChartRowTags.kflidNotes, this);`, `case kfragComment: vwenv.AddStringProp(ConstChartRowTags.kflidLabel, this);`",
+     "source": "FieldWorks/Src/LexText/Discourse/ConstChartBody.cs:306-320; FieldWorks/Src/views/VwRootBox.cpp:201-260, 520-533; liblcm/src/SIL.LCModel/Application/Impl/DomainDataByFlid.cs:1251-1254; FieldWorks/Src/views/VwNotifier.cpp:424-482; FieldWorks/Src/LexText/Discourse/ConstChartVc.cs:245-252, 303-306, 568-571",
+     "confidence": "high",
+     "critical": true,
+     "implication": "If FDAT writes only custom fields (or its own objects), the open FLEx chart neither redraws nor breaks; if FDAT touches Rows/Cells/Notes/Label the FLEx chart redraws those parts live."
+    },
+    {
+     "claim": "A foreign row deletion is applied by unregistering the object (hvo set to kHvoObjectDeleted) in the data pass; PropChanged for the dead object's own properties is skipped, while the owning chart's Rows change (the chart is a separate dirtball) fires PropChanged after all data changes, so the lazy row list regenerates from the already-updated RowsOS. If the display index no longer exists the rootbox falls back to a full Reconstruct instead of throwing, and chart logic guards row access with IsValidObject.",
+     "evidence": "LcmStateChangeObjectDeletion.Redo: `identityMap.UnregisterObject(m_changedObject); ObjectRestoreService.ResetBasics(identityMap, ..., (int)SpecialHVOValues.kHvoObjectDeleted);` ; GetPropChangeInformation: `if (propChange == null || propChange.ObjectIsInvalid) continue;` ; VwRootBox::PropChanged: `// Most likely to happen when item has been deleted and nothing follows ... if (ivMinDisp < 0) { if (cvIns == 0) Reconstruct(true); return S_OK; }` ; ConstituentChartLogic: `count = row.IsValidObject ? row.CellsOS.Count : 0; return row.IsValidObject; // if row gets deleted, returns false.` and `if (m_chart == null || !m_chart.IsValidObject || m_chart.RowsOS.Count == 0)`",
+     "source": "liblcm/src/SIL.LCModel/Infrastructure/Impl/LcmStateChangingClasses.cs:417-428; liblcm/src/SIL.LCModel/Infrastructure/Impl/UnitOfWork.cs:286-307, 620-631; FieldWorks/Src/views/VwRootBox.cpp:209-223; FieldWorks/Src/LexText/Discourse/ConstituentChartLogic.cs:1459, 3004-3005, 4240",
+     "confidence": "medium",
+     "critical": false,
+     "implication": "The view-engine path for a vanished row is defensive; residual risk is only in chart-logic state (highlight cells, bookmarks, current selection) that caches a ChartLocation to the deleted row, which was not traced. FDAT should avoid deleting rows FLEx may be showing."
+    },
+    {
+     "claim": "Auto-merge is refused whenever the same object was modified on both sides unless the only foreign differences are DateModified or an OwningCollection; the foreign diff is computed against FLEx's CURRENT in-memory state (including its unsaved edits), so an FDAT write to any field of an object the FLEx user has unsaved edits on (custom field on a ConstChartRow they are annotating; custom field on DsConstChart while they add rows, since Rows is an OwningSequence, not a collection) is a conflict. It also refuses when one side deleted what the other modified or references.",
+     "evidence": "OkToReconcileChanges: `if(goners.Intersect(m_foreignGoners)...) return false; if (commonDirtballs.FirstOrDefault() != null && !OkToReconcileCommonDirtballs(commonDirtballs)) return false; if (goners.Intersect(foreignDirtballIds)...) return false; if (ourDirtballIds.Intersect(m_foreignGoners)...) return false; // Did we add a reference to something they deleted? ...` ; OkToReconcileDirtball: DateModified -> `return false; // keep looking`; `if ((CellarPropertyType)...GetFieldType(flid) == CellarPropertyType.OwningCollection) return false; // keep checking` ; otherwise `foundBadChange = true;` ; MakeChangeInfoFor compares the foreign XML with `currentInternal.GetVectorProperty(flid)` / current values of the live object.",
+     "source": "liblcm/src/SIL.LCModel/Infrastructure/Impl/ChangeReconciler.cs:55-127, 140-166, 769-800, 812-836",
+     "confidence": "high",
+     "critical": true,
+     "implication": "Anchoring FDAT data on DsConstChart or ConstChartRow (as custom fields) means any FDAT save that lands while the FLEx user has unsaved work on that same chart/row (window: up to ~10 s of idle, unbounded while actively charting) forces the conflict dialog and loses the FLEx user's unsaved edits on Refresh. Anchoring on FDAT-owned objects (own list items, own objects referencing rows) avoids common dirtballs entirely."
+    },
+    {
+     "claim": "On an irreconcilable foreign commit the backend parks the reconciler, the save timer stops auto-saving, and the next Save shows the modal ConflictingSaveDlg; only a user Refresh (IUndoStackManager.Refresh from OnMasterRefresh) reverts every unsaved UOW, clears redo, and then applies the foreign changes.",
+     "evidence": "Commit: `else { uowService.ConflictingChanges(reconciler); SaveMetadata(metadata); return true; }` ; SaveOnIdle: `if (m_pendingReconciliation != null) return; // don't auto-save until the user Refreshes.` ; SaveInternal: `if (m_pendingReconciliation != null) { GetUserInputOnConflictingSave(); return; }` -> `if (m_ui.ConflictingSave()) RevertToSavedState();` ; RevertToSavedState: `stackWithMostRecentChange.RevertUnsavedUnitOfWork(); ... stack.ClearRedoStack(); ... m_pendingReconciliation.ReconcileForeignChanges();` ; Refresh(): `if (m_pendingReconciliation != null) RevertToSavedState();` ; FwXWindow: `Cache.ServiceLocator.GetInstance<IUndoStackManager>().Refresh();` ; dialog text: \"FieldWorks cannot save your changes, because they conflict with changes made by another user in a way that FieldWorks cannot resolve. You will not be able to save changes until you Refresh your display...\"",
+     "source": "liblcm/src/SIL.LCModel/Infrastructure/Impl/SharedXMLBackendProvider.cs:410-415; liblcm/src/SIL.LCModel/Infrastructure/Impl/UnitOfWorkService.cs:245-246, 329-347, 362-434; FieldWorks/Src/FdoUi/FwLcmUI.cs:47-53; FieldWorks/Src/FdoUi/Dialogs/ConflictingSaveDlg.resx:121; FieldWorks/Src/xWorks/FwXWindow.cs:1705",
+     "confidence": "high",
+     "critical": false,
+     "implication": "The failure mode of a shared-object write is severe for the FLEx user (all unsaved work reverted), so FDAT's object choice must minimise overlap rather than rely on the dialog."
+    },
+    {
+     "claim": "A MasterRefresh (F5) does not poll the commit log; it only reverts when a conflict is already pending, then rebuilds every RootSite via Reconstruct. So a stale view can only be fixed by F5 if the foreign data has already been reconciled by the ~10 s save poll.",
+     "evidence": "UnitOfWorkService.Refresh: `if (m_pendingReconciliation != null) RevertToSavedState();` (nothing else) ; SimpleRootSite.RefreshDisplay: `// Always reconstruct: view constructors read state the root box can't see ... m_rootb.Reconstruct();` ; OnMasterRefresh: `xwnd.PrepareToRefresh(); ... xwnd.FinishRefresh(); xwnd.Refresh();`",
+     "source": "liblcm/src/SIL.LCModel/Infrastructure/Impl/UnitOfWorkService.cs:388-393; FieldWorks/Src/Common/SimpleRootSite/SimpleRootSite.cs:2501-2541; FieldWorks/Src/xWorks/FwXWindow.cs:99-136, 1677-1690",
+     "confidence": "high",
+     "critical": false,
+     "implication": "Telling users 'press F5 to see FDAT changes' works only after the poll has run; the poll itself is the true sync point."
+    },
+    {
+     "claim": "Reconciled foreign changes are inserted as a non-undoable bundle that is made to predate the FLEx user's unsaved bundles, whose sequence numbers are shifted; the user's own Undo stack is preserved. PropChanged is marshalled to the UI thread and selections are suppressed during the redo.",
+     "evidence": "`MakeBundlePredateUnsavedBundles(uow); UowService.NonUndoableStack.AddForeignBundleToUndoStack(uow);` ; MakeBundlePredateUnsavedBundles: `var delta = uow.Sequence - minSequence + 1; ... uow1.Sequence += delta;` ; SendPropChangedNotifications: `m_ui.SynchronizeInvoke.Invoke(() => { ... change.BroadcastChanges(SubscriberCanReceivePropChangeCallDelegate, subscribers); ...})` ; Redo: `m_uowService.SuppressSelections = true;`",
+     "source": "liblcm/src/SIL.LCModel/Infrastructure/Impl/ChangeReconciler.cs:200-205, 672-694; liblcm/src/SIL.LCModel/Infrastructure/Impl/UnitOfWorkService.cs:527-560; liblcm/src/SIL.LCModel/Infrastructure/Impl/UnitOfWork.cs:282-284",
+     "confidence": "high",
+     "critical": false,
+     "implication": "FDAT changes appear in FLEx as non-undoable; the FLEx user cannot Undo an FDAT write, and their own Undo history survives a successful reconcile."
+    },
+    {
+     "claim": "The Lists editor reacts to foreign list changes: PossibilityRecordList.PropChanged reloads the whole list when Possibilities/SubPossibilities gain or lose items and updates the displayed name on Name/Abbreviation changes; in the chart, marker (CmPossibility) cells display Abbreviation/Name via AddStringAltMember, so they regenerate when FDAT changes a marker's abbreviation.",
+     "evidence": "RecordList: `if (tag == CmPossibilityTags.kflidSubPossibilities || tag == CmPossibilityListTags.kflidPossibilities && (cvIns > 0 || cvDel > 0)) { ... ReloadList(); } else if (tag == CmPossibilityTags.kflidName || tag == CmPossibilityTags.kflidAbbreviation) { ... UpdateListItemName(hvo); }` ; ConstChartVc: `case kfragPossibility: // A CmPossibility, show it's abbreviation ... vwenv.AddStringAltMember(flid, retWs, this);`",
+     "source": "FieldWorks/Src/xWorks/RecordList.cs:279-323; FieldWorks/Src/LexText/Discourse/ConstChartVc.cs:286-298",
+     "confidence": "high",
+     "critical": false,
+     "implication": "FDAT-managed marker/list items (own list or ChartMarkers) show up live in an open Lists editor and in the chart without a refresh, subject to the same shared-object conflict rule if the user is editing that list item."
+    },
+    {
+     "claim": "The Tagging tab draws tag labels from a private in-memory cache (m_tagStrings) that is filled when a segment's data is loaded and by the tab's own edit handlers; although the display notes a dependency on StText.Tags so a foreign TagsOC PropChanged regenerates the bundle rows, the regeneration reads the unchanged cache, so foreign TextTag changes are likely shown stale until Refresh (inferred, not executed).",
+     "evidence": "`private Dictionary<Tuple<ISegment, int>, ITsString[]> m_tagStrings; // Cache tag strings by ISegment and index` ; filled in `LoadDataForSegments(...) { ... LoadDataForTextTags(hvo); }` and `CacheTagString(ttag)` called from InterlinTaggingChild edits (`// Cache the new tagging string and call PropChanged?`); display: `if (m_tagStrings.TryGetValue(key, out tss)) { ... vwenv.NoteDependency(new [] { analysis.Segment.Hvo, stText.Hvo }, new [] { SegmentTags.kflidAnalyses, StTextTags.kflidTags }, 2); ... vwenv.AddString(tss[i]); }`",
+     "source": "FieldWorks/Src/LexText/Interlinear/InterlinTaggingVc.cs:26, 60-99, 278-285, 290-309; FieldWorks/Src/LexText/Interlinear/InterlinTaggingChild.cs:585-599",
+     "confidence": "medium",
+     "critical": false,
+     "implication": "If FDAT ever wrote TextTags (Tagging-tab data) the open Tagging tab would not reliably reflect them; another reason to keep FDAT data on the chart side, as the owner intends."
+    },
+    {
+     "claim": "For MultiString/MultiUnicode fields (including custom ones) the reconciler only walks the AStr/AUni alternatives present in the foreign XML and skips the field when the element is absent, so a foreign change that removes an alternative or empties the whole field is not propagated to the live FLEx object.",
+     "evidence": "`case CellarPropertyType.MultiString: { if (element == null) continue; ... foreach (var aStrNode in element.Elements(\"AStr\")) { ... }` and likewise `foreach (var aStrNode in element.Elements(\"AUni\"))` under MultiUnicode.",
+     "source": "liblcm/src/SIL.LCModel/Infrastructure/Impl/ChangeReconciler.cs:864-911",
+     "confidence": "medium",
+     "critical": false,
+     "implication": "If FDAT stores values in multilingual custom fields, clearing a value may not show in a concurrently open FLEx until restart; prefer single-valued types (String/Integer/Boolean/Guid/ReferenceAtomic) or write an explicit empty string rather than removing the alternative (whether LCM omits empty alternatives on write was not verified)."
+    },
+    {
+     "claim": "FDAT only becomes a shared-backend peer if the project is opened with kSharedXML: FLEx forces kSharedXML for its own open, but flexlibs constructs a plain ProjectId (default kXML) and LcmCache upgrades kXML to kSharedXML only when the project's ProjectLexiconSettings.ProjectSharing flag is true; otherwise the flexlibs open fails with a lock error while FLEx has the project open.",
+     "evidence": "FieldWorks.cs: `if (projectId != null && IsSharedXmlBackendNeeded(projectId)) projectId.Type = BackendProviderType.kSharedXML;` ; FLExLCM.OpenProject: `projId = ProjectId(projectFileName) ... LcmCache.CreateCacheFromExistingData(projId, ...)` ; ProjectId default `return BackendProviderType.kXML;` ; LcmCache.GetProviderTypeFromProjectId: `case BackendProviderType.kXML: return LcmSettings.IsProjectSharingEnabled(projectId.ProjectFolder) ? BackendProviderType.kSharedXML : BackendProviderType.kXML;` ; IsProjectSharingEnabled reads `ProjectLexiconSettings ... return settings.ProjectSharing;` ; FLExProject.py: \"A call to `OpenProject()` may fail with a `FP_FileLockedError`\".",
+     "source": "FieldWorks/Src/Common/FieldWorks/FieldWorks.cs:455-457, 486-493; flexlibs/flexlibs/code/FLExLCM.py:72-110; FieldWorks/Src/Common/FieldWorks/ProjectId.cs:403-418; liblcm/src/SIL.LCModel/LcmCache.cs:211-226; liblcm/src/SIL.LCModel/LcmSettings.cs:66-74; flexlibs/flexlibs/code/FLExProject.py:213-226",
+     "confidence": "high",
+     "critical": true,
+     "implication": "The 'FDAT runs alongside FLEx' UX requires either the project's sharing setting to be enabled (FLEx's Project Sharing option, which also lets Paratext open it) or FDAT to build its ProjectId with Type = kSharedXML explicitly; without that FDAT cannot open the project at all while FLEx is running."
+    }
+   ],
+   "openQuestions": [
+    "Whether ConstituentChart/ConstituentChartLogic cached state (CurrHighlightCells, ChOrph bookmarks, the current rootbox selection) can throw when a foreign reconcile deletes the row they point at; the Views regeneration path is defensive but the chart-logic caches were not traced end to end.",
+    "Whether the Tagging tab really shows stale tags after a foreign TagsOC change (inferred from the m_tagStrings cache; not executed).",
+    "Whether LCM omits an empty AStr/AUni alternative when writing a commit record, which would make 'clear a multilingual custom field' invisible to the FLEx peer until restart.",
+    "Whether real user projects typically have ProjectLexiconSettings.ProjectSharing enabled, or whether FDAT must set BackendProviderType.kSharedXML itself when constructing the ProjectId in flexlibs.",
+    "How often a linguist's FLEx session holds unsaved edits on the same DsConstChart/ConstChartRow at the moment FDAT saves (the conflict window is <=~10 s of idle but unbounded during active charting); this decides whether FDAT may write custom fields on chart objects at all while FLEx is open, or must write only FDAT-owned objects.",
+    "The commit-log master's write to the .fwdata file is gated by `StartupVersionNumber == ModelVersion`; behaviour when FDAT (flexlibs) and FLEx run different LCM model versions was not examined."
+   ]
   }
  }
 }
