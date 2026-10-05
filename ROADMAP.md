@@ -2,6 +2,8 @@
 
 This is a lightweight, developer‑facing roadmap of features we intend to ship soon. It focuses on the Discourse/Text Chart viewer, persistence, and export pipeline.
 
+See also `PLAN-flex-integration.md` (2026-10-05): writing-system gap, re-import without losing work, and the staged path to reading charts straight from FLEx via LCM.
+
 Priority ordering (top = higher priority):
 1) Custom fields (columns, chips, overlays)
 2) Improved import/export and local storage at all levels
