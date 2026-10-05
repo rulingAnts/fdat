@@ -48,12 +48,24 @@ columns by that GUID (exposed as `data-row-id`), but free translations and salie
 still keyed by row **label**, which FLEx renumbers when a clause is inserted. So most of "start
 over after re-export" is a key choice on our side, fixable now.
 
-**GUIDs do not match between chart XML and FLExText.** FLExText puts the segment GUID on `<phrase>`,
-text/paragraph GUIDs on their elements, and on `<word>` the GUID of the *analysis object*
-(`WfiWordform` / `WfiAnalysis` / `WfiGloss`), which repeats for every occurrence of the same word
-(`InterlinearExporter.WriteGuidAttributeForCurrentObj`). Chart-row GUIDs appear nowhere in FLExText.
-The only key that identifies a word occurrence in both worlds is **segment GUID + index in segment**,
-and only an LCM exporter can put that into chart XML.
+**The link exists in the data model, and only the chart XML export drops it.** A chart cell's
+`ConstChartWordGroup` carries four fields (`MasterLCModel.xml`, class `ConstChartWordGroup`):
+`BeginSegment` and `EndSegment` (references to the text's `Segment` objects) and
+`BeginAnalysisIndex` / `EndAnalysisIndex` (positions within those segments). `GetOccurrences()`
+(`OverridesLing_Disc.cs`) walks from the begin point to the end point, skipping punctuation, and
+yields the `AnalysisOccurrence`s the cell charts. That is how FLEx keeps chart words tied to the
+interlinear text.
+
+The same key is visible in FLExText: every `<phrase>` carries its segment GUID, and its `<word>`
+children are the segment's analyses in order, punctuation included as `item type="punct"`
+(`InterlinearExporter.cs`). So **(segment GUID, position within the phrase)** identifies a word
+occurrence exactly on both sides. What FLExText puts on `<word guid>` is the *analysis object*
+(`WfiWordform` / `WfiAnalysis` / `WfiGloss`), which repeats for every occurrence of the same word, so
+that attribute is not an occurrence key on its own.
+
+FLEx's "Export Text Chart" writes none of this: chart XML has row GUIDs and nothing on words. Hence
+chart XML and FLExText cannot be joined exactly as exported, while an LCM exporter that writes
+`seg` + `idx` on every `<word>` (Stage B) makes the FLExText join exact, not heuristic.
 
 ## 2. Decisions (2026-10-05)
 
@@ -119,7 +131,9 @@ the web app already loads, plus what FLEx's own export lacks:
 - every word's **baseline text** with its real writing system, and the other vernacular alternates
   as attributes the stylesheet ignores (e.g. `alt-fau-fonipa="…"`), so FDAT can offer a per-chart
   writing-system switch;
-- `seg` (segment GUID) and `idx` (index) on every `<word>`: the shared occurrence key;
+- `seg` (segment GUID) and `idx` (analysis index) on every `<word>`, straight from the word
+  group's `BeginSegment`/`BeginAnalysisIndex` walk: the exact key shared with FLExText `<phrase>`
+  GUIDs and word positions, and the stable identity for token-level annotations;
 - marker possibility GUIDs on `<listRef>` so styling keys on identity, not scraped labels;
 - free translations and row notes; the `<languages>` block with all vernacular systems.
 
