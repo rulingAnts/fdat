@@ -1,6 +1,6 @@
 /* FDAT PWA Service Worker */
 /* Version bump this to trigger updates */
-const SW_VERSION = 'v2';
+const SW_VERSION = 'v3';
 const PRECACHE = `fdat-precache-${SW_VERSION}`;
 const RUNTIME = 'fdat-runtime';
 
@@ -14,9 +14,12 @@ const CORE_FILES = [
   './assets/icon-48.png',
   './assets/icon-64.png',
   './assets/icon-128.png',
+  './assets/icon-192.png',
   './assets/icon-256.png',
+  './assets/icon-512.png',
   './assets/icon-192-maskable.png',
   './assets/icon-512-maskable.png',
+  './favicon.ico',
   './manifest.webmanifest'
 ];
 
@@ -53,14 +56,18 @@ self.addEventListener('message', (event) => {
 
 function fromNetwork(request) {
   return fetch(request).then((response) => {
-    const copy = response.clone();
-    caches.open(RUNTIME).then((cache) => cache.put(request, copy));
+    // Only cache successful, non-partial responses; never let a cache failure break the response
+    if (response && response.ok && response.status !== 206) {
+      const copy = response.clone();
+      caches.open(RUNTIME).then((cache) => cache.put(request, copy)).catch(() => {});
+    }
     return response;
   });
 }
 
+// Match ignoring any query string so cache-busting or versioned URLs still hit the precached file
 function fromCache(request) {
-  return caches.match(request).then((cached) => cached || Promise.reject('no-match'));
+  return caches.match(request, { ignoreSearch: true }).then((cached) => cached || Promise.reject('no-match'));
 }
 
 self.addEventListener('fetch', (event) => {
@@ -79,7 +86,7 @@ self.addEventListener('fetch', (event) => {
   // Cache-first for same-origin static assets
   if (url.pathname.startsWith(self.location.pathname.replace(/sw\.js$/, ''))) {
     event.respondWith(
-      caches.match(request).then((cached) => cached || fromNetwork(request).catch(() => fromCache(request)))
+      caches.match(request, { ignoreSearch: true }).then((cached) => cached || fromNetwork(request).catch(() => fromCache(request)))
     );
   }
 });
