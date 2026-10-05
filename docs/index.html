@@ -3328,10 +3328,10 @@ ${content}
     function suggestExportFilename(){
       try{
         var titleNode = document.querySelector('.chart-prologue h1, .chart-prologue h2, .chart-prologue h3, .chart-prologue div, .chart-prologue p');
-        var t = (titleNode && titleNode.textContent || '').trim().replace(/\s+/g,' ');
+        var t = (titleNode && titleNode.textContent || '').trim().replace(/\\s+/g,' ');
         var base = t || 'FLEx XML View Export — Text Chart';
-        var name = base.replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g,' ').trim();
-        if(!/\.html?$/i.test(name)) name += '.html';
+        var name = base.replace(/[\\/:*?"<>|]+/g, ' ').replace(/\\s+/g,' ').trim();
+        if(!/\\.html?$/i.test(name)) name += '.html';
         return name;
       }catch(_){ return 'FLEx XML View Export — Text Chart.html'; }
     }
