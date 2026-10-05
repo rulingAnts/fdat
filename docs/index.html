@@ -14,7 +14,6 @@
     --bg:#fbfbfb;
     --card:#fff;
     --border:#e2e2e2;
-    --highlight:#fff2b8;
   }
   body{font-family:system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial;margin:18px;background:var(--bg);color:#111}
   header{display:flex;align-items:center;gap:12px;margin-bottom:12px}
@@ -94,31 +93,9 @@
   .prologue-grid input[type=text]{width:100%;padding:6px;border:1px solid var(--border);border-radius:6px}
   .prologue-grid select{padding:6px;border:1px solid var(--border);border-radius:6px}
   .prologue-grid textarea{width:100%;min-height:80px}
-  .section-title{font-weight:600;margin:8px 0;font-size:1rem}
-  ul.tree{list-style:none;margin:6px 0 6px 14px;padding-left:10px;border-left:1px dotted #ddd}
-  ul.tree li{margin:4px 0;position:relative;padding-left:6px}
-  .toggle{user-select:none;cursor:pointer;margin-right:6px;color:var(--accent)}
-  .collapsed > ul{display:none}
   .label{font-weight:600;margin-right:6px}
   .muted{color:var(--muted);font-size:0.95rem}
-  table.phonemes{width:100%;border-collapse:collapse;margin-top:8px}
-  table.phonemes th, table.phonemes td{padding:8px;border-bottom:1px solid #eee;text-align:left}
-  tr.highlight{background:var(--highlight) !important}
-  .natclass{border:1px solid var(--border);padding:8px;border-radius:6px;margin-bottom:10px;background:linear-gradient(#fff,#f9f9f9)}
-  .natclass .members{margin-top:8px;display:flex;flex-wrap:wrap;gap:8px}
-  .symbol-pill{background:#f1f8ff;border:1px solid #d6eaff;padding:3px 7px;border-radius:6px;cursor:pointer}
-  .symbol-pill:hover{background:#e8f2ff}
   .small-muted{font-size:0.9rem;color:var(--muted)}
-  .translation-main{font-weight:600}
-  .translation-others{color:var(--muted);margin-left:6px;font-size:0.95rem}
-  .lang-controls{display:flex;align-items:center;gap:8px;margin:6px 0 12px 0;flex-wrap:wrap}
-  .lang-controls .lang-item{display:flex;align-items:center;gap:6px;padding:4px}
-  .icon-btn{background:#fff;border:1px solid #e0e0e0;padding:5px 7px;border-radius:6px;cursor:pointer}
-  .wordform-card{border:1px solid #e6e6e6;padding:10px;border-radius:8px;margin-bottom:8px;background:linear-gradient(#fff,#fcfcff)}
-  .wordform-header{display:flex;align-items:center;justify-content:space-between;gap:12px}
-  .wordform-main{font-weight:700;font-size:1.05rem}
-  .wordform-meta{color:var(--muted);font-size:0.9rem}
-  .wordform-body{margin-top:8px}
   /* Abbreviations UI and rendered block */
   .abbrev-panel{display:none;margin-top:10px;background:#fff8f0;border:1px solid #ffe2bf;padding:10px 12px;border-radius:8px}
   .abbrev-grid{display:grid;grid-template-columns:160px 1fr;gap:8px 10px;align-items:center}
@@ -163,8 +140,6 @@
   .lr-group-items{margin-left:24px}
   /* Inserted external HTML blocks */
   .inserted-html-before-prologue, .inserted-html-after-chart{border:1px solid #eee;padding:8px 10px;border-radius:6px;background:#fff; margin:10px 0}
-  .table-view{width:100%;border-collapse:collapse}
-  .table-view th,.table-view td{padding:8px;border-bottom:1px solid #eee;text-align:left}
   .controls-inline{display:flex;gap:8px;align-items:center;margin-bottom:8px}
   footer{margin-top:28px;padding-top:10px;border-top:1px solid #e6e6e6;color:var(--muted);font-size:0.9rem}
   /* Endnotes container tweaks */
@@ -228,7 +203,7 @@
   header, footer, .controls-row,
   #openBtn, #saveBtn, #resetBtn, #transformBtn,
   #fileInput, #xmlInput, .small-muted.controls,
-  .lang-controls, .controls-inline, .viewer .small-muted {
+  .controls-inline, .viewer .small-muted {
     display: none !important;
   }
 
@@ -371,10 +346,6 @@
 <div class="controls-row">
   <button id="transformBtn">Preview</button>
   <button id="resetBtn" class="secondary">Reset</button>
-
-  <label style="display:flex;align-items:center;gap:8px" class="small-muted" hidden>
-    <input id="showNames" type="checkbox" hidden> <!--Show element names-->
-  </label>
 
   <label id="repeatHeadersContainer" style="display:none;align-items:center;gap:8px" class="small-muted" title="When printing a Text Chart, repeat the top two header rows at the top of each page">
     <input id="repeatHeaders" type="checkbox"> Repeat chart headers on each printed page
@@ -972,8 +943,6 @@ function create(tag, attrs={}, text){
 
 /* ===== Persistence keys and state ===== */
 // Legacy keys (for backward compatibility and migration)
-const LANG_PREFS_KEY = 'flex_xml_viewer_lang_prefs_v1';
-const WORDFORM_PREFS_KEY = 'flex_xml_viewer_wordform_prefs_v1';
 const TEXTCHART_PROLOGUE_KEY = 'flex_textchart_prologue_v1';
 const TEXTCHART_POSTLOGUE_KEY = 'flex_textchart_postlogue_v1';
 const PRINT_HEADERS_KEY = 'flex_textchart_repeat_headers_v1';
@@ -1027,72 +996,11 @@ function getRowGuidFromTr(tr){ return tr.getAttribute('data-row-guid') || getOrA
 function getRowGuidByLabel(label){ const map = loadRowGuidMap(); return (map.byLabel||{})[label] || ''; }
 function getRowGuidByIndex(idx){ const map = loadRowGuidMap(); return (map.byIdx||{})[String(idx)] || ''; }
 
-// Token GUID registry: key shape `${rowIdx}:${kind}:${pos}` → guid
-function loadTokenGuidMap(){ return loadJSON(TOKEN_GUIDS_KEY) || { byKey:{} }; }
-function saveTokenGuidMap(map){ saveJSON(TOKEN_GUIDS_KEY, map); }
-function tokenKindFromPair(pair){
-  const cls = pair.className || '';
-  if(/\blistRef\b/.test(cls)) return 'listRef';
-  if(/\bclauseMkr\b/.test(cls)) return 'clauseMkr';
-  if(/\brownum\b/.test(cls)) return 'rownum';
-  if(/\bnote\b/.test(cls)) return 'note';
-  if(/\bpunct-open\b/.test(cls)) return 'punctOpen';
-  if(/\bpunct-close\b/.test(cls)) return 'punctClose';
-  return 'token';
-}
-function assignTokenGuids(area){
-  const tbl = area?.querySelector('table.chartshell'); if(!tbl) return;
-  const map = loadTokenGuidMap(); const byKey = map.byKey || {}; let updated = false;
-  const rows = Array.from(tbl.querySelectorAll('tbody tr')).filter(r=> !r.classList.contains('title1') && !r.classList.contains('title2') && !r.classList.contains('ft-inline'));
-  rows.forEach(r=>{
-    const rowIdx = r.getAttribute('data-row-idx') || '';
-    // Walk tokens in row order
-    const pairs = Array.from(r.querySelectorAll('.interlinear .pair'));
-    pairs.forEach((pair, i)=>{
-      const kind = tokenKindFromPair(pair);
-      const key = `${rowIdx}:${kind}:${i+1}`;
-      let guid = byKey[key];
-      if(!guid){ guid = newGuid(); byKey[key] = guid; updated = true; }
-      pair.setAttribute('data-token-guid', guid);
-      pair.setAttribute('data-token-key', key);
-    });
-  });
-  if(updated){ saveTokenGuidMap({ byKey }); }
-}
-
-// Note GUID registry: byRowGuid → noteGuid (for endnotes mode)
-function loadNoteGuidMap(){ return loadJSON(NOTE_GUIDS_KEY) || { byRowGuid:{} }; }
-function saveNoteGuidMap(map){ saveJSON(NOTE_GUIDS_KEY, map); }
-function assignNoteGuids(area){
-  const tbl = area?.querySelector('table.chartshell'); if(!tbl) return;
-  const noteLinks = Array.from(tbl.querySelectorAll('a.note-link'));
-  if(!noteLinks.length) return; // only in endnotes mode
-  const map = loadNoteGuidMap(); const byRowGuid = map.byRowGuid || {}; let updated = false;
-  noteLinks.forEach(a=>{
-    const tr = a.closest('tr'); if(!tr) return;
-    const rowGuid = getOrAssignRowGuid(tr); if(!rowGuid) return;
-    let ng = byRowGuid[rowGuid]; if(!ng){ ng = newGuid(); byRowGuid[rowGuid] = ng; updated = true; }
-    a.setAttribute('data-note-guid', ng);
-    const href = a.getAttribute('href') || '';
-    if(href.startsWith('#')){
-      const id = href.slice(1);
-      const endnote = document.getElementById(id);
-      if(endnote) endnote.setAttribute('data-note-guid', ng);
-    }
-  });
-  if(updated){ saveNoteGuidMap({ byRowGuid }); }
-}
-
 // { mode: 'tooltip'|'inline', items: { [rowLabel:string]: string }, style: { fontSize?:string, color?:string, bg?:string } }
 function loadFTPrefs(){ const d = loadJSON(FT_PREFS_KEY) || {}; return { mode: d.mode || 'tooltip', items: d.items || {}, style: d.style || {} }; }
 function saveFTPrefs(p){ saveJSON(FT_PREFS_KEY, p); }
 
 let globalState = {
-  phonemeIndex: {},
-  idToNatclassIds: {},
-  natclassElements: {},
-  phonemeRowIds: {},
-  showNames: false,
   chartAbbrevLabels: [],
   listRefLabels: [],
   listRefPrefs: null,
@@ -1153,8 +1061,7 @@ function loadHierarchicalSettings(){
     return {
       appSettings: {
         printHeaders: false,
-        freezeHeaders: false,
-        showNames: false
+        freezeHeaders: false
       },
       languages: {}
     };
@@ -1554,8 +1461,6 @@ function collectAllSettings(){
   syncLegacyToHierarchical();
   
   const keys = [
-    LANG_PREFS_KEY,
-    WORDFORM_PREFS_KEY,
     TEXTCHART_PROLOGUE_KEY,
     TEXTCHART_POSTLOGUE_KEY,
     PRINT_HEADERS_KEY,
@@ -1607,15 +1512,6 @@ if(importBtn && importInput){
     }catch(err){ alert('Failed to import settings: ' + (err?.message || String(err))); }
   });
 }
-
-byId('showNames').addEventListener('change', e=>{
-  globalState.showNames = e.target.checked;
-  document.querySelectorAll('[data-gen-label]').forEach(el=>{
-    const label = el.getAttribute('data-gen-label');
-    const prev = el.previousSibling;
-    if(prev) prev.textContent = globalState.showNames ? (label + ': ') : '';
-  });
-});
 
 /* ===== Print header repetition (Text Chart only) ===== */
 function setPrintHeadersEnabled(enabled){
@@ -2593,10 +2489,8 @@ function initAppendHtmlControls(){
 /* ===== Main detection & dispatch ===== */
 async function renderDocument(xmlDoc){
   // reset state
-  globalState = { phonemeIndex:{}, idToNatclassIds:{}, natclassElements:{}, phonemeRowIds:{}, showNames: byId('showNames').checked };
+  globalState = {};
 
-  const root = xmlDoc.documentElement;
-  const tag = root.nodeName.toLowerCase();
   const area = byId('renderArea');
   area.innerHTML = '';
 
@@ -2709,84 +2603,27 @@ async function renderDocument(xmlDoc){
     return;
   }
 
-  // Only handle Discourse Charts (Text Charts) in this tool
-  // For other XML types, redirect to the general FLEx XML Viewer
-  if(!isTextChartDocument(xmlDoc)){
-    // Hide all Text Chart sections
-    showLanguageProjectsSection(false);
-    showTextGenresSection(false);
-    showDocumentPartsSection(false);
-    const rhc = byId('repeatHeadersContainer');
-    if(rhc) rhc.style.display = 'none';
-    const fhc2 = byId('freezeHeadersContainer');
-    if(fhc2) fhc2.style.display = 'none';
-    setPrintHeadersEnabled(false);
-    
-    // Display message directing users to the general viewer
-    const msg = create('div');
-    msg.innerHTML = `
-      <div style="padding:20px;text-align:center">
-        <h3 style="color:#d32f2f;margin-bottom:12px">This tool only supports Discourse Charts (Text Charts)</h3>
-        <p style="margin-bottom:16px">For Lists, Phonology, Wordforms, and other FLEx XML export types,<br>please use the <strong><a href="index.html" style="color:var(--accent);text-decoration:underline">FLEx XML Viewer</a></strong>.</p>
-        <button onclick="window.location.href='index.html'" style="background:var(--accent);color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:1rem">Go to FLEx XML Viewer</button>
-      </div>
-    `;
-    area.appendChild(msg);
-    return;
-  }
-
-  // Order of detection: Phonology, Translated Lists (AUni multi), Monolingual list, Wordforms, Generic
-  if(tag === 'phonology'){
-    showProloguePanel(false);
-    showAbbrevPanel(false);
-    showCustomColsPanel(false);
-    area.appendChild(renderPhonologyView(xmlDoc));
-    return;
-  }
-
-  if(tag === 'list' || tag === 'lists'){
-    // detect AUni-based multilingual lists
-    const aunis = xmlDoc.querySelectorAll('AUni[ws]');
-    const langSet = new Set(Array.from(aunis).map(a => a.getAttribute('ws')));
-    if(langSet.size > 1){
-      showProloguePanel(false);
-      showAbbrevPanel(false);
-      showCustomColsPanel(false);
-      area.appendChild(renderTranslatedListView(root, Array.from(langSet)));
-      return;
-    } else {
-      showProloguePanel(false);
-      showAbbrevPanel(false);
-      showCustomColsPanel(false);
-      area.appendChild(renderListView(root));
-      return;
-    }
-  }
-
-  // Wordforms detection (FieldWorks uses a <wordforms> root or similar)
-  const wfNodes = xmlDoc.getElementsByTagName('wordforms');
-  if(wfNodes && wfNodes.length > 0){
-    showProloguePanel(false);
-    showAbbrevPanel(false);
-    showCustomColsPanel(false);
-    area.appendChild(renderWordformsView(xmlDoc));
-    return;
-  }
-
-  // fallback generic
-  showProloguePanel(false);
-  showAbbrevPanel(false);
-  showAppendHtmlPanel(false);
-  showCustomColsPanel(false);
-  area.appendChild(renderGenericView(root));
-  // Hide print-headers toggle for non-TextChart views
+  // Only Discourse Charts (Text Charts) are supported in this tool.
+  // For any other XML type, hide the chart sections and redirect to the general FLEx XML Viewer.
+  showLanguageProjectsSection(false);
+  showTextGenresSection(false);
+  showDocumentPartsSection(false);
   const rhc = byId('repeatHeadersContainer');
   if(rhc) rhc.style.display = 'none';
   const fhc2 = byId('freezeHeadersContainer');
   if(fhc2) fhc2.style.display = 'none';
   setPrintHeadersEnabled(false);
-  showListRefPanel(false);
-  showPostloguePanel(false);
+
+  // Display message directing users to the general viewer
+  const msg = create('div');
+  msg.innerHTML = `
+    <div style="padding:20px;text-align:center">
+      <h3 style="color:#d32f2f;margin-bottom:12px">This tool only supports Discourse Charts (Text Charts)</h3>
+      <p style="margin-bottom:16px">For Lists, Phonology, Wordforms, and other FLEx XML export types,<br>please use the <strong><a href="https://rulingants.github.io/flexml_display/" target="_blank" rel="noopener noreferrer" style="color:var(--accent);text-decoration:underline">FLEx XML Viewer</a></strong>.</p>
+      <button onclick="window.open('https://rulingants.github.io/flexml_display/', '_blank', 'noopener')" style="background:var(--accent);color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:1rem">Go to FLEx XML Viewer</button>
+    </div>
+  `;
+  area.appendChild(msg);
 }
 
 /* ===== Salience Legend and Column ===== */
@@ -3086,698 +2923,6 @@ async function renderTextChart(xmlDoc){
   return outFrag;
 }
 
-/* ===== Monolingual List (unchanged behavior) ===== */
-function renderListView(root) {
-  // Accept either a single <list> or a top-level <lists> container
-  if(!root) return create('div', {}, '(no list)');
-  const nodeName = (root.nodeName || '').toLowerCase();
-  if(nodeName === 'lists'){
-    const outer = create('div');
-    const lists = Array.from(root.querySelectorAll(':scope > list'));
-    if(lists.length === 0) return outer;
-    lists.forEach(l => outer.appendChild(renderListView(l)));
-    return outer;
-  }
-
-  const container = create('div');
-  // title: prefer Name or name inside the list; also accept a <name><str> pattern
-  const title = (root.querySelector(':scope > name, :scope > Name')?.textContent?.trim()) || (root.querySelector(':scope > Name str, :scope > name str')?.textContent?.trim()) || 'List';
-  container.appendChild(create('div', { cls: 'section-title' }, title));
-
-  // helper to find direct "item-like" children (item, letitem, sditem)
-  function itemChildrenOf(el){
-    return Array.from(el.querySelectorAll(':scope > item, :scope > letitem, :scope > sditem'));
-  }
-
-  function buildItem(node) {
-    const li = create('li');
-
-    // collect children from direct item-like children and <subitems>
-    const direct = itemChildrenOf(node);
-    const subitemsContainer = node.querySelector(':scope > subitems');
-    const sub = subitemsContainer ? itemChildrenOf(subitemsContainer) : [];
-    const allChildren = direct.concat(sub);
-    const hasChildren = allChildren.length > 0;
-
-    // add toggle affordance (always present for consistent layout)
-    const toggle = create('span', { cls: 'toggle' }, hasChildren ? '\u25be' : ' ');
-    if(hasChildren) toggle.style.cursor = 'pointer';
-    li.appendChild(toggle);
-
-    // display name (handle <name ws="..."> and <name><str ws=...> patterns)
-    const nameNode = node.querySelector(':scope > name, :scope > Name');
-    const rawName = nameNode ? nameNode.textContent.trim() : (node.getAttribute && node.getAttribute('name')) || node.nodeName;
-    const abbrNode = node.querySelector(':scope > abbr, :scope > Abbreviation');
-    const abbrText = abbrNode ? abbrNode.textContent.trim() : (node.getAttribute && (node.getAttribute('abbr') || node.getAttribute('ws'))) || '';
-    const text = abbrText ? `${rawName} (${abbrText})` : rawName;
-    li.appendChild(document.createTextNode(text));
-
-    if (hasChildren) {
-      const ul = create('ul', { cls: 'tree' });
-      allChildren.forEach(ci => ul.appendChild(buildItem(ci)));
-      li.appendChild(ul);
-
-      toggle.addEventListener('click', () => {
-        li.classList.toggle('collapsed');
-        toggle.textContent = toggle.textContent === '\u25be' ? '\u25b8' : '\u25be';
-      });
-    }
-
-    return li;
-  }
-
-  // find top-level items: could be directly under list (item/letitem/sditem) or inside an <items> wrapper
-  let topItems = itemChildrenOf(root);
-  if(topItems.length === 0){
-    const itemsWrapper = root.querySelector(':scope > items');
-    if(itemsWrapper) topItems = itemChildrenOf(itemsWrapper);
-  }
-
-  const topUL = create('ul', { cls: 'tree' });
-  topItems.forEach(it => topUL.appendChild(buildItem(it)));
-  container.appendChild(topUL);
-
-  return container;
-}
-
-/* ===== Translated (multilingual) List view + Language Controls ===== */
-function renderTranslatedListView(root, langList){
-  // canonicalize languages (stable order): prefer 'en' if present
-  const langs = Array.from(langList);
-  langs.sort((a,b)=>{
-    if(a.toLowerCase().includes('en') && !b.toLowerCase().includes('en')) return -1;
-    if(b.toLowerCase().includes('en') && !a.toLowerCase().includes('en')) return 1;
-    return a.localeCompare(b);
-  });
-
-  // load saved prefs and merge defaults
-  const saved = loadJSON(LANG_PREFS_KEY) || {};
-  const prefs = {};
-  langs.forEach((ws,i)=> {
-    prefs[ws] = {
-      ws,
-      order: (saved[ws] && typeof saved[ws].order === 'number') ? saved[ws].order : i,
-      visible: (saved[ws] && typeof saved[ws].visible === 'boolean') ? saved[ws].visible : true
-    };
-  });
-  // compact orders
-  const orderedLangs = Object.values(prefs).sort((a,b)=>a.order-b.order).map(l=>l.ws);
-  orderedLangs.forEach((ws,i)=> prefs[ws].order = i);
-  saveJSON(LANG_PREFS_KEY, prefs);
-
-  const container = create('div');
-  const title = root.querySelector(':scope > Name AUni[ws="en"], :scope > Name AUni, :scope > Name, :scope > name')?.textContent?.trim() || 'Translated List';
-  container.appendChild(create('div', {cls:'section-title'}, title));
-
-  const controls = create('div', {cls:'lang-controls'});
-  container.appendChild(controls);
-
-  function buildLangControls(){
-    controls.innerHTML = '';
-    const arr = Object.values(prefs).sort((a,b)=>a.order-b.order);
-    arr.forEach((L, idx)=>{
-      const item = create('div', {cls:'lang-item'});
-      item.style.display = 'flex'; item.style.alignItems = 'center'; item.style.gap = '6px';
-
-      const codeSpan = create('span', {}, L.ws);
-      codeSpan.style.fontWeight = '600';
-      item.appendChild(codeSpan);
-
-      const up = create('button', {cls:'icon-btn', title:'Move up (higher priority)'}, '⬆️');
-      up.addEventListener('click', ()=> { swapOrder(L.ws, -1); });
-      item.appendChild(up);
-
-      const down = create('button', {cls:'icon-btn', title:'Move down (lower priority)'}, '⬇️');
-      down.addEventListener('click', ()=> { swapOrder(L.ws, +1); });
-      item.appendChild(down);
-
-      const vis = create('button', {cls:'icon-btn', title: L.visible ? 'Hide language' : 'Show language'}, L.visible ? '👁️' : '🚫');
-      vis.addEventListener('click', ()=> { prefs[L.ws].visible = !prefs[L.ws].visible; saveJSON(LANG_PREFS_KEY, prefs); buildLangControls(); renderItems(); });
-      item.appendChild(vis);
-
-      controls.appendChild(item);
-    });
-
-    const reset = create('button', {cls:'small-btn secondary', title:'Reset language order and visibility to defaults'}, 'Reset');
-    reset.addEventListener('click', ()=> {
-      langs.forEach((ws,i)=> { prefs[ws].order = i; prefs[ws].visible = true; });
-      saveJSON(LANG_PREFS_KEY, prefs); buildLangControls(); renderItems();
-    });
-    controls.appendChild(reset);
-  }
-
-  const listContainer = create('div');
-  container.appendChild(listContainer);
-
-  function renderItems(){
-    listContainer.innerHTML = '';
-    const ordered = Object.values(prefs).sort((a,b)=>a.order-b.order).filter(l=>l.visible).map(l=>l.ws);
-    if(ordered.length === 0){
-      listContainer.appendChild(create('div', {cls:'small-muted'}, 'No languages selected. Use controls to show at least one language.'));
-      return;
-    }
-    const poss = root.querySelector(':scope > Possibilities, :scope > possibilities') || root;
-    const topItems = Array.from(poss.children).filter(c=>c.nodeType === 1);
-    const topUL = create('ul', {cls:'tree'});
-    topItems.forEach(ti => topUL.appendChild(buildItem(ti, ordered)));
-    listContainer.appendChild(topUL);
-  }
-
-  function buildItem(node, visibleLangs){
-    const li = create('li');
-    const sub = node.querySelector(':scope > SubPossibilities, :scope > SubPossibility, :scope > Possibilities');
-    const hasSub = sub && Array.from(sub.children).some(c=>c.nodeType === 1);
-    const toggle = create('span', {cls:'toggle'}, hasSub ? '▾' : ' ');
-    if(hasSub) toggle.style.cursor = 'pointer';
-    li.appendChild(toggle);
-
-    const nameNode = node.querySelector(':scope > Name, :scope > name');
-    const abbrNode = node.querySelector(':scope > Abbreviation, :scope > abbr');
-    const names = collectAUniMap(nameNode);
-    const abbrs = collectAUniMap(abbrNode);
-    const inline = create('span');
-    inline.innerHTML = buildMultilingualInlineHTML(names, abbrs, visibleLangs);
-    li.appendChild(inline);
-
-    if(hasSub){
-      const ul = create('ul', {cls:'tree'});
-      Array.from(sub.children).filter(c=>c.nodeType===1).forEach(ch => ul.appendChild(buildItem(ch, visibleLangs)));
-      li.appendChild(ul);
-      toggle.addEventListener('click', ()=> {
-        li.classList.toggle('collapsed');
-        toggle.textContent = toggle.textContent === '▾' ? '▸' : '▾';
-      });
-    }
-    return li;
-  }
-
-  function swapOrder(ws, delta){
-    const entries = Object.values(prefs).sort((a,b)=>a.order-b.order);
-    const idx = entries.findIndex(e => e.ws === ws);
-    const target = idx + delta;
-    if(target < 0 || target >= entries.length) return;
-    const a = entries[idx], b = entries[target];
-    const t = a.order; a.order = b.order; b.order = t;
-    saveJSON(LANG_PREFS_KEY, prefs); buildLangControls(); renderItems();
-  }
-
-  buildLangControls();
-  renderItems();
-  return container;
-}
-
-/* ===== Helpers for multilingual lists ===== */
-function collectAUniMap(node){
-  if(!node) return [];
-  const a = Array.from(node.querySelectorAll('AUni'));
-  if(a.length) return a.map(x => ({ ws: x.getAttribute('ws') || '', text: x.textContent.trim() }));
-  // fallback: Name with ws attribute (mono) or plain text
-  if(node.hasAttribute && node.hasAttribute('ws')) return [{ ws: node.getAttribute('ws') || '', text: (node.textContent || '').trim() }];
-  const txt = (node.textContent || '').trim();
-  return txt ? [{ ws:'', text: txt }] : [];
-}
-
-function buildMultilingualInlineHTML(names, abbrs, visibleLangs){
-  if(!names || names.length === 0) return '(unnamed)';
-  const shown = visibleLangs.map(ws => names.find(n => n.ws === ws)).filter(Boolean);
-  if(!shown.length) return '(none)';
-  const main = shown[0];
-  const others = shown.slice(1);
-  let html = `<span class="translation-main">${escapeHtml(main.text)}</span>`;
-  if(others.length) html += ' ' + others.map(o => `<span class="translation-others">${escapeHtml(o.text)}</span>`).join(' · ');
-  if(abbrs && abbrs.length){
-    const abv = visibleLangs.map(ws => (abbrs.find(a => a.ws === ws) || {}).text).filter(Boolean);
-    if(abv.length) html += ` <span class="small-muted">[${abv.map(escapeHtml).join(' / ')}]</span>`;
-  }
-  return html;
-}
-
-/* ===== Generic recursive fallback (unchanged) ===== */
-function renderGenericView(root){
-  const container = create('div');
-  container.appendChild(create('div', {cls:'section-title'}, 'Generic XML View'));
-  const rootUL = create('ul', {cls:'tree'});
-  rootUL.appendChild(build(root));
-  container.appendChild(rootUL);
-  return container;
-
-  function build(node){
-    const li = create('li');
-    const childElements = Array.from(node.childNodes).filter(n => n.nodeType === 1 || (n.nodeType === 3 && n.nodeValue.trim()));
-    const hasChildren = childElements.length > 0;
-    const toggle = create('span', {cls:'toggle'}, hasChildren ? '▾' : ' ');
-    if(hasChildren) toggle.style.cursor='pointer';
-    li.appendChild(toggle);
-
-    const labelText = node.nodeType === 1 ? node.nodeName : '';
-    const labelSpan = create('span');
-    if(globalState.showNames && node.nodeType === 1) labelSpan.textContent = labelText + ': ';
-    if(globalState.showNames && node.nodeType === 1) labelSpan.style.fontWeight = '600';
-    li.appendChild(labelSpan);
-
-    if(node.nodeType === 3){
-      li.appendChild(document.createTextNode(node.nodeValue.trim()));
-    } else {
-      const textChild = Array.from(node.childNodes).filter(n=>n.nodeType===3 && n.nodeValue.trim())[0];
-      if(textChild && childElements.every(n => n.nodeType === 3 || (n.nodeType === 1 && n.childNodes.length === 1 && n.childNodes[0].nodeType === 3))){
-        li.appendChild(create('span', {}, textChild.nodeValue.trim()));
-      } else {
-        const subUL = create('ul', {cls:'tree'});
-        childElements.forEach(ch => subUL.appendChild(build(ch)));
-        li.appendChild(subUL);
-        if(hasChildren){
-          toggle.addEventListener('click', ()=> {
-            li.classList.toggle('collapsed');
-            toggle.textContent = toggle.textContent === '▾' ? '▸' : '▾';
-          });
-        }
-      }
-    }
-    if(node.nodeType === 1) li.setAttribute('data-gen-label', node.nodeName);
-    return li;
-  }
-}
-
-/* ===== Phonology rendering (human-friendly) ===== */
-function renderPhonologyView(xmlDoc){
-  const root = xmlDoc.documentElement;
-  const container = create('div');
-  container.appendChild(create('div', {cls:'section-title'}, 'Phonology Summary'));
-  container.appendChild(create('div', {cls:'small-muted'}, `Version ${root.getAttribute('Version') || '—'} — DefaultVernWs: ${root.getAttribute('DefaultVernWs') || '—'}`));
-
-  // index phonemes
-  globalState.phonemeIndex = {};
-  const phonemes = Array.from(xmlDoc.getElementsByTagName('PhPhoneme') || []);
-  phonemes.forEach(p => {
-    const id = p.getAttribute('Id');
-    const symbol = pickAUni(p.querySelector(':scope > Name')) || '';
-    const desc = p.querySelector(':scope > Description Run')?.textContent?.trim() || '';
-    const codes = Array.from(p.querySelectorAll(':scope > Codes PhCode Representation AUni')).map(a => a.textContent.trim()).filter(Boolean);
-    globalState.phonemeIndex[id] = { id, symbol, desc, codes, node: p };
-  });
-
-  // phoneme sets / inventory
-  const sets = Array.from(xmlDoc.getElementsByTagName('PhPhonemeSet') || []);
-  sets.forEach(set => {
-    const setName = pickAUni(set.querySelector(':scope > Name')) || 'Phoneme Set';
-    const setDiv = create('div', {cls:'natclass'});
-    setDiv.appendChild(create('div', {cls:'section-title'}, setName));
-    const setDesc = set.querySelector(':scope > Description Run')?.textContent;
-    if(setDesc) setDiv.appendChild(create('div', {cls:'small-muted'}, setDesc));
-
-    const table = create('table', {cls:'phonemes'});
-    table.innerHTML = '<thead><tr><th>Symbol</th><th>Description</th><th>ID</th><th>Codes</th></tr></thead>';
-    const tbody = create('tbody');
-    const rows = Array.from(set.querySelectorAll(':scope > Phonemes PhPhoneme')) || phonemes;
-    rows.forEach(pnode => {
-      const pid = pnode.getAttribute('Id');
-      const data = globalState.phonemeIndex[pid] || {
-        id: pid,
-        symbol: pickAUni(pnode.querySelector(':scope > Name')) || '',
-        desc: pnode.querySelector(':scope > Description Run')?.textContent || '',
-        codes: Array.from(pnode.querySelectorAll(':scope > Codes PhCode Representation AUni')).map(a=>a.textContent.trim())
-      };
-      const row = create('tr', {id: 'phoneme-row-' + data.id});
-      const symbolCell = create('td');
-      const symBtn = create('span', {cls:'symbol-pill'}, data.symbol || '(no symbol)');
-      symBtn.style.cursor = 'pointer';
-      symBtn.addEventListener('click', ()=> onPhonemeSymbolClick(data.id));
-      symbolCell.appendChild(symBtn);
-      row.appendChild(symbolCell);
-      row.appendChild(create('td', {}, data.desc || ''));
-      row.appendChild(create('td', {}, data.id));
-      row.appendChild(create('td', {}, (data.codes && data.codes.join(', ')) || ''));
-      tbody.appendChild(row);
-      globalState.phonemeRowIds[data.id] = row.id;
-    });
-    table.appendChild(tbody);
-    setDiv.appendChild(table);
-
-    // boundary markers
-    const bMarkers = Array.from(set.querySelectorAll(':scope > BoundaryMarkers PhBdryMarker')) || [];
-    if(bMarkers.length){
-      setDiv.appendChild(create('div', {cls:'section-title'}, 'Boundary Markers'));
-      const bmList = create('div', {cls:'small-muted'});
-      bMarkers.forEach(bm => {
-        const bmName = pickAUni(bm.querySelector(':scope > Name')) || bm.getAttribute('Id') || '';
-        const bmCodes = Array.from(bm.querySelectorAll(':scope > Codes PhCode Representation AUni')).map(a=>a.textContent.trim()).filter(Boolean);
-        bmList.appendChild(create('div', {}, `${bmName} ${ bmCodes.length ? '(' + bmCodes.join(', ') + ')' : ''}`));
-      });
-      setDiv.appendChild(bmList);
-    }
-
-    container.appendChild(setDiv);
-  });
-
-  // natural classes
-  const ncs = Array.from(xmlDoc.getElementsByTagName('PhNCSegments') || []);
-  if(ncs.length){
-    container.appendChild(create('div', {cls:'section-title'}, 'Natural Classes'));
-    ncs.forEach((nc, idx) => {
-      const ncId = nc.getAttribute('Id') || ('nc-' + idx);
-      const name = pickAUni(nc.querySelector(':scope > Name')) || nc.getAttribute('Id') || 'Unnamed';
-      const abbr = pickAUni(nc.querySelector(':scope > Abbreviation')) || '';
-      const desc = nc.querySelector(':scope > Description Run')?.textContent || '';
-      const ncEl = create('div', {cls:'natclass', id: 'natclass-' + ncId});
-      const title = create('div', {cls:'section-title'}, name + (abbr ? (' (' + abbr + ')') : ''));
-      ncEl.appendChild(title);
-      if(desc) ncEl.appendChild(create('div', {cls:'small-muted'}, desc));
-      const segments = Array.from(nc.querySelectorAll(':scope > Segments')).map(s => s.getAttribute('dst')).filter(Boolean);
-      const membersDiv = create('div', {cls:'members'});
-      segments.forEach(sid => {
-        const phon = globalState.phonemeIndex[sid];
-        const text = phon ? (phon.symbol || phon.id) : sid;
-        const pill = create('span', {cls:'symbol-pill'}, text);
-        pill.addEventListener('click', ()=> {
-          if(globalState.phonemeRowIds[sid]) scrollToAndHighlight(globalState.phonemeRowIds[sid]);
-          else alert('Phoneme ID ' + sid + ' not found in phoneme index.');
-        });
-        membersDiv.appendChild(pill);
-        if(!globalState.idToNatclassIds[sid]) globalState.idToNatclassIds[sid] = [];
-        globalState.idToNatclassIds[sid].push(ncEl.id);
-      });
-      ncEl.appendChild(membersDiv);
-      container.appendChild(ncEl);
-      globalState.natclassElements[ncEl.id] = ncEl;
-    });
-  }
-
-  // simple placeholders for Environments, Contexts, Rules
-  const envs = Array.from(xmlDoc.getElementsByTagName('Environments') || []);
-  envs.forEach(en => {
-    const sec = create('div', {cls:'natclass'});
-    sec.appendChild(create('div', {cls:'section-title'}, 'Environments'));
-    sec.appendChild(en.hasChildNodes() ? renderGenericView(en) : create('div', {cls:'small-muted'}, '(no environment definitions)'));
-    container.appendChild(sec);
-  });
-  const ctxs = Array.from(xmlDoc.getElementsByTagName('Contexts') || []);
-  ctxs.forEach(c => {
-    const sec = create('div', {cls:'natclass'});
-    sec.appendChild(create('div', {cls:'section-title'}, 'Contexts'));
-    sec.appendChild(c.hasChildNodes() ? renderGenericView(c) : create('div', {cls:'small-muted'}, '(no contexts defined)'));
-    container.appendChild(sec);
-  });
-
-  // interactive behavior: clicking phoneme rows highlights natural classes
-  Object.keys(globalState.phonemeRowIds).forEach(pid => {
-    const rid = globalState.phonemeRowIds[pid];
-    const row = document.getElementById(rid);
-    if(row){
-      row.addEventListener('click', ()=> {
-        const natIds = globalState.idToNatclassIds[pid] || [];
-        Object.values(globalState.natclassElements).forEach(el=> el.style.boxShadow = '');
-        if(natIds.length){
-          natIds.forEach(nid => {
-            const el = globalState.natclassElements[nid];
-            if(el){
-              el.style.boxShadow = '0 0 0 3px rgba(11,110,219,0.08)';
-              el.scrollIntoView({behavior:'smooth', block:'center'});
-            }
-          });
-        } else {
-          row.classList.add('highlight');
-          setTimeout(()=> row.classList.remove('highlight'), 1200);
-        }
-      });
-    }
-  });
-
-  return container;
-}
-
-/* ===== Wordforms export rendering (Card + Table + gloss language controls) ===== */
-function renderWordformsView(xmlDoc){
-  // root might be <wordforms> or something similar depending on export
-  const root = xmlDoc.getElementsByTagName('wordforms')[0] || xmlDoc.documentElement;
-  const container = create('div');
-  container.appendChild(create('div', {cls:'section-title'}, 'Wordforms'));
-
-  // collect all wordform nodes
-  // FieldWorks samples may use <wordform> children
-  const wfNodes = Array.from(root.getElementsByTagName('wordform'));
-  // fallback: maybe root contains <Wordform> nodes
-  if(wfNodes.length === 0){
-    const alt = Array.from(root.getElementsByTagName('WordForm')).concat(Array.from(root.getElementsByTagName('Wordform')));
-    if(alt.length) wfNodes.push(...alt);
-  }
-
-  // scan for gloss languages across all gloss elements
-  const glossElems = Array.from(xmlDoc.querySelectorAll('gloss[ws], gloss AUni[ws], glosses gloss[ws]')) // flexible
-    .concat(Array.from(xmlDoc.querySelectorAll('gloss'))); // fallback
-  const glossLangsSet = new Set();
-  glossElems.forEach(g => {
-    if(g.getAttribute && g.getAttribute('ws')) glossLangsSet.add(g.getAttribute('ws'));
-    else {
-      // also accept <gloss><AUni ws="..."> or similar
-      const auni = g.querySelector && g.querySelector('AUni[ws]');
-      if(auni) glossLangsSet.add(auni.getAttribute('ws'));
-    }
-  });
-  const glossLangs = Array.from(glossLangsSet);
-  glossLangs.sort((a,b)=> a.toLowerCase().includes('en')? -1 : a.localeCompare(b));
-
-  // load wordform prefs (view mode + gloss languages visibility)
-  const saved = loadJSON(WORDFORM_PREFS_KEY) || {};
-  let viewMode = saved.viewMode || 'card'; // 'card' or 'table'
-  let glossPrefs = saved.glossPrefs || {};
-  // init prefs from discovered glossLangs
-  glossLangs.forEach((ws,i) => {
-    if(typeof glossPrefs[ws] !== 'object') glossPrefs[ws] = { ws, visible: true, order: i };
-  });
-
-  // UI controls
-  const controls = create('div', {cls:'controls-inline'});
-  const viewToggle = create('button', {cls:'small-btn', title:'Toggle Card/Table view'}, viewMode === 'card' ? 'Switch to Table View 📋' : 'Switch to Card View 🗂️');
-  controls.appendChild(viewToggle);
-
-  // gloss language chooser (only shown in Table view)
-  const glossChooser = create('div', {cls:'small-muted'});
-  glossChooser.style.display = viewMode === 'table' ? 'block' : 'none';
-  glossChooser.style.paddingLeft = '8px';
-  glossChooser.style.marginLeft = '8px';
-  glossChooser.textContent = 'Gloss languages: ';
-  glossLangs.forEach(ws => {
-    const label = create('label');
-    label.style.marginRight = '8px';
-    const cb = create('input'); cb.type = 'checkbox'; cb.checked = glossPrefs[ws].visible; cb.dataset.ws = ws;
-    cb.addEventListener('change', () => {
-      glossPrefs[ws].visible = cb.checked; saveJSON(WORDFORM_PREFS_KEY, { viewMode, glossPrefs }); renderItems();
-    });
-    label.appendChild(cb);
-    label.appendChild(document.createTextNode(' ' + ws));
-    glossChooser.appendChild(label);
-  });
-
-  controls.appendChild(glossChooser);
-  container.appendChild(controls);
-
-  // search/filter input (helpful)
-  const searchRow = create('div', {cls:'small-muted'});
-  searchRow.style.marginTop = '8px';
-  searchRow.innerHTML = 'Filter: <input id="wf_search" placeholder="search form or gloss..." style="padding:4px;border-radius:4px;border:1px solid #ddd;margin-left:6px;">';
-  container.appendChild(searchRow);
-
-  const listArea = create('div');
-  listArea.style.marginTop = '8px';
-  container.appendChild(listArea);
-
-  // wire view toggle
-  viewToggle.addEventListener('click', ()=>{
-    viewMode = viewMode === 'card' ? 'table' : 'card';
-    saveJSON(WORDFORM_PREFS_KEY, { viewMode, glossPrefs });
-    viewToggle.textContent = viewMode === 'card' ? 'Switch to Table View 📋' : 'Switch to Card View 🗂️';
-    glossChooser.style.display = viewMode === 'table' ? 'block' : 'none';
-    renderItems();
-  });
-
-  // render items either card or table
-  function renderItems(){
-    listArea.innerHTML = '';
-    const q = (byId('wf_search')?.value || '').trim().toLowerCase();
-
-    // helper to collect form text, glosses, category, counts
-    function extractData(wf){
-      const forms = [];
-      // FieldWorks uses <form ws="..."> inside wordform — but samples vary. We'll be flexible.
-      const formNodes = Array.from(wf.querySelectorAll('form, Form, word'));
-      if(formNodes.length === 0){
-        // try direct text
-        const txt = (wf.textContent || '').trim();
-        if(txt) forms.push({ws:'', text: txt});
-      } else {
-        formNodes.forEach(fn => {
-          // look for AUni children if present
-          const aunis = fn.querySelectorAll && fn.querySelectorAll('AUni');
-          if(aunis && aunis.length){
-            aunis.forEach(a => forms.push({ ws: a.getAttribute('ws') || '', text: (a.textContent||'').trim() }));
-          } else {
-            const ws = fn.getAttribute && fn.getAttribute('ws') || '';
-            const t = (fn.textContent || '').trim();
-            if(t) forms.push({ ws, text: t });
-          }
-        });
-      }
-
-      // analyses -> gloss, category, counts
-      const analyses = Array.from(wf.querySelectorAll('analysis, Analysis'));
-      const glosses = []; // array of {ws,text}
-      const categories = [];
-      analyses.forEach(a => {
-        const gNodes = Array.from(a.querySelectorAll('gloss, Gloss'));
-        if(gNodes.length){
-          gNodes.forEach(gn => {
-            const aun = gn.querySelector && gn.querySelector('AUni[ws]');
-            if(aun) glosses.push({ ws: aun.getAttribute('ws') || '', text: (aun.textContent||'').trim() });
-            else {
-              const ws = gn.getAttribute && gn.getAttribute('ws') || '';
-              const t = (gn.textContent || '').trim();
-              if(t) glosses.push({ ws, text: t });
-            }
-          });
-        }
-        const cat = a.querySelector('category, Category')?.textContent?.trim();
-        if(cat) categories.push(cat);
-      });
-
-      // counts
-      const predicted = parseInt(wf.getAttribute('PredictedAnalyses') || wf.getAttribute('predictedanalyses') || wf.querySelector('PredictedAnalyses')?.textContent || '0') || 0;
-      const user = parseInt(wf.getAttribute('UserAnalyses') || wf.getAttribute('useranalyses') || wf.querySelector('UserAnalyses')?.textContent || '0') || 0;
-
-      return { forms, glosses, categories, predicted, user, node: wf };
-    }
-
-    const dataList = wfNodes.map(wf => extractData(wf));
-
-    // apply search filter: matches form text or any gloss text
-    const filtered = dataList.filter(d => {
-      if(!q) return true;
-      const formMatch = d.forms.some(f => (f.text||'').toLowerCase().includes(q));
-      const glossMatch = d.glosses.some(g => (g.text||'').toLowerCase().includes(q));
-      const catMatch = d.categories.some(c => (c||'').toLowerCase().includes(q));
-      return formMatch || glossMatch || catMatch;
-    });
-
-    if(viewMode === 'card'){
-      // Card view
-      filtered.forEach(d => {
-        const card = create('div', {cls:'wordform-card'});
-        const header = create('div', {cls:'wordform-header'});
-        const main = create('div');
-        const primaryForm = d.forms[0]?.text || '(no form)';
-        main.appendChild(create('div', {cls:'wordform-main'}, primaryForm));
-        main.appendChild(create('div', {cls:'wordform-meta'}, `Predicted: ${d.predicted} · User: ${d.user}`));
-        header.appendChild(main);
-        // small expand button (collapse/expand body)
-        const expBtn = create('button', {cls:'small-btn', title:'Toggle details'}, '▾');
-        header.appendChild(expBtn);
-        card.appendChild(header);
-
-        const body = create('div', {cls:'wordform-body'});
-        if(d.glosses.length === 0 && d.categories.length === 0){
-          body.appendChild(create('div', {cls:'small-muted'}, '— No analysis —'));
-        } else {
-          // group glosses by ws
-          const byWs = {};
-          d.glosses.forEach(g => { if(!byWs[g.ws]) byWs[g.ws] = []; byWs[g.ws].push(g.text); });
-          Object.keys(byWs).forEach(ws => {
-            const line = create('div');
-            line.innerHTML = `<strong>Gloss (${escapeHtml(ws)}):</strong> ${escapeHtml(byWs[ws].join('; '))}`;
-            body.appendChild(line);
-          });
-          if(d.categories.length){
-            body.appendChild(create('div', {}, `Category: ${escapeHtml(d.categories.join('; '))}`));
-          }
-        }
-        body.style.display = 'block';
-        expBtn.addEventListener('click', ()=> {
-          body.style.display = body.style.display === 'none' ? 'block' : 'none';
-          expBtn.textContent = expBtn.textContent === '▾' ? '▸' : '▾';
-        });
-        card.appendChild(body);
-        listArea.appendChild(card);
-      });
-    } else {
-      // Table view: show selected gloss columns based on glossPrefs
-      const visibleGlossLangs = glossLangs.filter(ws => glossPrefs[ws] && glossPrefs[ws].visible);
-      const table = create('table', {cls:'table-view'});
-      // build header
-      const thead = create('thead');
-      const headerRow = create('tr');
-      headerRow.appendChild(create('th', {}, 'Wordform'));
-      visibleGlossLangs.forEach(ws => headerRow.appendChild(create('th', {}, `Gloss (${ws})`)));
-      headerRow.appendChild(create('th', {}, 'Category'));
-      headerRow.appendChild(create('th', {}, 'Pred'));
-      headerRow.appendChild(create('th', {}, 'User'));
-      thead.appendChild(headerRow);
-      table.appendChild(thead);
-      const tbody = create('tbody');
-      filtered.forEach(d => {
-        const tr = create('tr');
-        const primaryForm = d.forms[0]?.text || '(no form)';
-        tr.appendChild(create('td', {}, primaryForm));
-        visibleGlossLangs.forEach(ws => {
-          const text = d.glosses.filter(g=>g.ws === ws).map(g=>g.text).join('; ') || '—';
-          tr.appendChild(create('td', {}, text));
-        });
-        tr.appendChild(create('td', {}, d.categories.join('; ') || '—'));
-        tr.appendChild(create('td', {}, String(d.predicted)));
-        tr.appendChild(create('td', {}, String(d.user)));
-        tbody.appendChild(tr);
-      });
-      table.appendChild(tbody);
-      listArea.appendChild(table);
-    }
-  }
-
-  // initial render
-  renderItems();
-
-  // wire search input
-  const searchInput = byId('wf_search');
-  if(searchInput){
-    searchInput.addEventListener('input', () => { renderItems(); });
-  }
-
-  // wire gloss chooser UI to persist prefs
-  // already wired by checkboxes earlier when created, but ensure persistence for viewMode state
-  // save viewMode & glossPrefs whenever changed
-  function persistWordformPrefs(){ saveJSON(WORDFORM_PREFS_KEY, { viewMode, glossPrefs }); }
-  // update glossPrefs reference to the variable used by event handlers above
-  // ensure glossPrefs is synced with UI checkbox states if user toggles view toggle
-  // done through event handlers above that call saveJSON directly.
-
-  return container;
-}
-
-/* ===== Utilities used by phonology rendering ===== */
-function pickAUni(node){
-  if(!node) return '';
-  const aunis = Array.from(node.querySelectorAll('AUni'));
-  if(aunis.length === 0) {
-    const t = node.textContent && node.textContent.trim();
-    return t || '';
-  }
-  for(const a of aunis){ const ws = (a.getAttribute('ws')||'').toLowerCase(); if(ws.includes('fau')) return a.textContent.trim(); }
-  for(const a of aunis){ const ws = (a.getAttribute('ws')||'').toLowerCase(); if(ws.includes('en')) return a.textContent.trim(); }
-  return aunis[0].textContent.trim();
-}
-
-/* ===== Click helpers ===== */
-function onPhonemeSymbolClick(phonId){
-  const rowId = globalState.phonemeRowIds[phonId];
-  if(!rowId){ alert('Phoneme entry not found: ' + phonId); return; }
-  scrollToAndHighlight(rowId);
-}
-function scrollToAndHighlight(rowId){
-  const el = document.getElementById(rowId);
-  if(!el) return;
-  document.querySelectorAll('tr.highlight').forEach(r=> r.classList.remove('highlight'));
-  el.classList.add('highlight');
-  el.scrollIntoView({behavior:'smooth', block:'center'});
-  el.classList.add('scroll-target');
-  setTimeout(()=> el.classList.remove('scroll-target'), 2200);
-}
-
 /* ===== Build standalone HTML (for open/save) — note escaped closing tag to avoid template literal issues ===== */
 function buildStandaloneHTML(opts){
   opts = opts || {};
@@ -4056,27 +3201,6 @@ ${content}
       setTimeout(computeStickyOffsets, 200);
     }
   })();
-  document.querySelectorAll('.toggle').forEach(t=> {
-    const parent = t.parentElement;
-    t.addEventListener('click', ()=> {
-      parent.classList.toggle('collapsed');
-      t.textContent = t.textContent === '▾' ? '▸' : '▾';
-    });
-  });
-  document.querySelectorAll('.symbol-pill').forEach(p=> {
-    p.addEventListener('click', ()=> {
-      const txt = p.textContent.trim();
-      const rows = document.querySelectorAll('table.phonemes tbody tr');
-      for(const r of rows){
-        if(r.cells[0] && r.cells[0].textContent.trim() === txt){
-          r.scrollIntoView({behavior:'smooth', block:'center'});
-          r.classList.add('highlight');
-          setTimeout(()=> r.classList.remove('highlight'), 1800);
-          return;
-        }
-      }
-    });
-  });
   // Re-enable column resizing for Text Chart in exported document
   (function(){
     function wireHandleDrag(handle, allCols){
