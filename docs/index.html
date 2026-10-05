@@ -815,27 +815,24 @@ if ('serviceWorker' in navigator) {
       t.appendChild(btn); document.body.appendChild(t);
     }
     navigator.serviceWorker.register('./sw.js').then(reg => {
+      // After the user accepts an update, reload once the new worker takes control.
+      // (reg.waiting becomes null the moment it activates, so it cannot be polled for state.)
+      let wantReload = false, reloading = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!wantReload || reloading) return; // ignore first-install claim()
+        reloading = true; location.reload();
+      });
+      const activateWaiting = () => {
+        wantReload = true;
+        if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' }); else location.reload();
+      };
       // If there is a waiting worker (already installed but not active), offer to reload now
-      if (reg.waiting) {
-        showUpdateToast(() => {
-          reg.waiting.postMessage({ type: 'SKIP_WAITING' });
-          reg.waiting.addEventListener('statechange', () => { if (reg.waiting.state === 'activated') location.reload(); });
-        });
-      }
+      if (reg.waiting) showUpdateToast(activateWaiting);
       reg.addEventListener('updatefound', () => {
         const newWorker = reg.installing;
         if (!newWorker) return;
         newWorker.addEventListener('statechange', () => {
-          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-            showUpdateToast(() => {
-              if (reg.waiting) {
-                reg.waiting.postMessage({ type: 'SKIP_WAITING' });
-                reg.waiting.addEventListener('statechange', () => { if (reg.waiting.state === 'activated') location.reload(); });
-              } else {
-                location.reload();
-              }
-            });
-          }
+          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) showUpdateToast(activateWaiting);
         });
       });
     }).catch(console.warn);
@@ -1003,25 +1000,58 @@ function newGuid(){
 }
 function loadRowGuidMap(){ return loadJSON(ROW_GUIDS_KEY) || { byIdx:{}, byLabel:{} }; }
 function saveRowGuidMap(map){ saveJSON(ROW_GUIDS_KEY, map); }
+// Resolve (or mint) the GUID for a body row and record it in the map. Returns { guid, replaced }
+// where `replaced` is a previously mapped GUID that this row's FLEx id now supersedes.
+function resolveRowGuid(tr, map){
+  const flexId = tr.getAttribute('data-row-id') || '';
+  const idx = tr.getAttribute('data-row-idx') || '';
+  const label = computeRowLabelFromRow(tr);
+  const prior = (label && map.byLabel[label]) || (idx && map.byIdx[idx]) || '';
+  let guid = '';
+  // 1) FLEx row GUID (survives re-exports); 2) row label (survives row insertion elsewhere); 3) row index
+  if(flexId) guid = flexId;
+  else if(label && map.byLabel[label]) guid = map.byLabel[label];
+  else if(idx && map.byIdx[idx]) guid = map.byIdx[idx];
+  if(!guid) guid = newGuid();
+  if(idx) map.byIdx[idx] = guid;
+  if(label) map.byLabel[label] = guid;
+  tr.setAttribute('data-row-guid', guid);
+  return { guid, replaced: (prior && prior !== guid) ? prior : '' };
+}
 function getOrAssignRowGuid(tr){
   try{
-    const idxAttr = tr.getAttribute('data-row-idx');
-    const label = computeRowLabelFromRow(tr);
     const map = loadRowGuidMap();
-    const idx = idxAttr ? String(idxAttr) : '';
-    let guid = '';
-    // Prefer existing mapping by idx; fallback to label if present
-    if(idx && map.byIdx[idx]) guid = map.byIdx[idx];
-    else if(label && map.byLabel[label]) guid = map.byLabel[label];
-    if(!guid){ guid = newGuid(); }
-    // Update both indices for robustness over time
-    if(idx) map.byIdx[idx] = guid;
-    if(label) map.byLabel[label] = guid;
+    const { guid, replaced } = resolveRowGuid(tr, map);
     saveRowGuidMap(map);
-    // Reflect on DOM for faster access
-    tr.setAttribute('data-row-guid', guid);
+    if(replaced) migrateRowKeyedData({ [replaced]: guid });
     return guid;
   }catch(_){ return ''; }
+}
+// Assign GUIDs to every body row with a single load/save of the map (per-row round-trips were O(n²)).
+function assignRowGuids(area){
+  const tbl = area?.querySelector('table.chartshell'); if(!tbl) return;
+  const map = loadRowGuidMap(); const renames = {};
+  Array.from(tbl.querySelectorAll('tbody tr')).forEach(tr=>{
+    if(tr.classList.contains('title1') || tr.classList.contains('title2') || tr.classList.contains('ft-inline')) return;
+    const { guid, replaced } = resolveRowGuid(tr, map);
+    if(replaced) renames[replaced] = guid;
+  });
+  saveRowGuidMap(map);
+  if(Object.keys(renames).length) migrateRowKeyedData(renames);
+}
+// When a row's GUID changes (e.g. the FLEx id is now available), carry row-keyed data across.
+function migrateRowKeyedData(renames){
+  try{
+    const cc = loadCustomColsPrefs(); let changed = false;
+    Object.keys(renames).forEach(oldG=>{
+      const newG = renames[oldG];
+      if(cc.cells && cc.cells[oldG] !== undefined){
+        cc.cells[newG] = Object.assign({}, cc.cells[oldG], cc.cells[newG] || {});
+        delete cc.cells[oldG]; changed = true;
+      }
+    });
+    if(changed) saveCustomColsPrefs(cc);
+  }catch(_){ /* non-fatal */ }
 }
 function getRowGuidFromTr(tr){ return tr.getAttribute('data-row-guid') || getOrAssignRowGuid(tr); }
 function getRowGuidByLabel(label){ const map = loadRowGuidMap(); return (map.byLabel||{})[label] || ''; }
@@ -1188,8 +1218,8 @@ function ensureLanguage(settings, languageId){
       id: languageId,
       name: '',
       ethnologueCode: '',
-      abbrevs: { include: true, position: 'top', items: [] },
-      listRefs: { enforceMode: 'none', reverseOrder: false, items: [], groups: [] },
+      abbrevs: { include: true, position: 'top', entries: {} },
+      listRefs: { entries: {}, order: [], enforceMode: 'none', reverse: false, groups: [] },
       genres: {}
     };
   }
@@ -1220,8 +1250,8 @@ function ensureDocument(genre, documentId){
     genre.documents[documentId] = {
       id: documentId,
       name: '',
-      prologue: { titleTag: 'h2', titleText: '', prefaceHtml: '', prefaceAuto: true },
-      postlogue: { html: '', auto: true },
+      prologue: { tag: 'h2', titleText: '', prefaceHtml: '', autoConvert: true },
+      postlogue: { html: '', autoConvert: true },
       freeTranslations: { mode: 'tooltip', items: {}, style: {} },
       notes: { mode: 'inline', width: '' },
       salienceAssignments: {},
@@ -1262,45 +1292,85 @@ function getCurrentDocument(){
 }
 
 function setCurrentContext(languageId, genreId, documentId){
+  syncLegacyToHierarchical(); // persist the outgoing context first
   const ctx = { languageId, genreId, documentId };
   saveCurrentContext(ctx);
-  // Update all dependent settings
-  refreshAllSettingsFromContext();
+  onContextChanged();
 }
+
+// Push the selected language/genre/document into the working keys, then make the UI reflect them:
+// every settings panel re-reads its values and the chart (if one is loaded) is transformed again.
+function onContextChanged(){
+  refreshAllSettingsFromContext();
+  refreshAllPanelsFromPrefs();
+  rerenderCurrentChart();
+}
+function refreshAllPanelsFromPrefs(){
+  [refreshPrologueInputs, refreshPostlogueInputs, refreshNotesInputs, refreshFTInputs, refreshSalienceEditor, refreshCustomColsList, refreshHeaderToggles]
+    .forEach(fn=>{ try{ fn(); }catch(e){ console.warn('Panel refresh failed:', e); } });
+}
+
+// Load, mutate and save the hierarchical settings in one step so edits are never made on a throwaway copy.
+function updateSettings(mutator){
+  const settings = loadHierarchicalSettings();
+  const ctx = loadCurrentContext();
+  const result = mutator(settings, ctx);
+  saveHierarchicalSettings(settings);
+  return result;
+}
+// Fill in any structure an imported object may be missing
+function normalizeLanguage(lang){
+  lang.genres = lang.genres && typeof lang.genres === 'object' ? lang.genres : {};
+  Object.values(lang.genres).forEach(normalizeGenre);
+  return lang;
+}
+function normalizeGenre(genre){
+  genre.documents = genre.documents && typeof genre.documents === 'object' ? genre.documents : {};
+  return genre;
+}
+
+// Defaults written to the working (legacy) keys for any level that has no selection, so a chart never
+// shows another language's, genre's or document's data while nothing is selected at that level.
+const LEVEL_DEFAULTS = {
+  language: ()=> ({ abbrevs: { include: true, position: 'top', entries: {} }, listRefs: { entries: {}, order: [], enforceMode: 'none', reverse: false, groups: [] } }),
+  genre: ()=> ({ salienceBands: { enabled: true, showLegend: true, showColumn: false, cellOnly: false, opacity: 1, tree: [] } }),
+  document: ()=> ({ prologue: { tag: 'h2', titleText: '', prefaceHtml: '', autoConvert: true }, postlogue: { html: '', autoConvert: true }, freeTranslations: { mode: 'tooltip', items: {}, style: {} }, notes: { mode: 'inline', width: '' }, salienceAssignments: {}, rowGuids: { byIdx: {}, byLabel: {} }, tokenGuids: { byKey: {} }, noteGuids: { byRowGuid: {} }, customColumns: { cols: [], cells: {} } })
+};
 
 function refreshAllSettingsFromContext(){
   // This will sync the legacy storage keys with hierarchical data
   const settings = loadHierarchicalSettings();
   const ctx = loadCurrentContext();
-  
-  if(ctx.languageId && settings.languages[ctx.languageId]){
-    const lang = settings.languages[ctx.languageId];
-    
-    // Sync language-level settings
-    if(lang.abbrevs) saveJSON(ABBREV_PREFS_KEY, lang.abbrevs);
-    if(lang.listRefs) saveJSON(LISTREF_PREFS_KEY, lang.listRefs);
-    
-    if(ctx.genreId && lang.genres[ctx.genreId]){
-      const genre = lang.genres[ctx.genreId];
-      
-      // Sync genre-level settings
-      if(genre.salienceBands) saveJSON(SALIENCE_PREFS_KEY, genre.salienceBands);
-      
-      if(ctx.documentId && genre.documents[ctx.documentId]){
-        const doc = genre.documents[ctx.documentId];
-        
-        // Sync document-level settings
-        if(doc.prologue) saveJSON(TEXTCHART_PROLOGUE_KEY, doc.prologue);
-        if(doc.postlogue) saveJSON(TEXTCHART_POSTLOGUE_KEY, doc.postlogue);
-        if(doc.freeTranslations) saveJSON(FT_PREFS_KEY, doc.freeTranslations);
-        if(doc.notes) saveJSON(NOTES_PREFS_KEY, doc.notes);
-        if(doc.rowGuids) saveJSON(ROW_GUIDS_KEY, doc.rowGuids);
-        if(doc.tokenGuids) saveJSON(TOKEN_GUIDS_KEY, doc.tokenGuids);
-        if(doc.noteGuids) saveJSON(NOTE_GUIDS_KEY, doc.noteGuids);
-        if(doc.customColumns) saveJSON(CUSTOM_COLS_PREFS_KEY, doc.customColumns);
-      }
-    }
-  }
+  const lang = (ctx.languageId && settings.languages[ctx.languageId]) || null;
+  const genre = (lang && ctx.genreId && lang.genres && lang.genres[ctx.genreId]) || null;
+  const doc = (genre && ctx.documentId && genre.documents && genre.documents[ctx.documentId]) || null;
+
+  // Language level
+  const L = lang || LEVEL_DEFAULTS.language();
+  saveJSON(ABBREV_PREFS_KEY, L.abbrevs || LEVEL_DEFAULTS.language().abbrevs);
+  saveJSON(LISTREF_PREFS_KEY, L.listRefs || LEVEL_DEFAULTS.language().listRefs);
+
+  // Genre level: band definitions and display settings. Row assignments live on the document
+  // (a genre's bands are shared by its texts, but which row gets which band is per text).
+  const G = genre || LEVEL_DEFAULTS.genre();
+  const bands = Object.assign({}, G.salienceBands || LEVEL_DEFAULTS.genre().salienceBands);
+  const genreLevelAssignments = bands.assignments || {}; // pre-split data from older versions
+  delete bands.assignments;
+  const docAssignments = doc && doc.salienceAssignments && Object.keys(doc.salienceAssignments).length ? doc.salienceAssignments : null;
+  bands.assignments = doc ? (docAssignments || genreLevelAssignments) : {};
+  saveJSON(SALIENCE_PREFS_KEY, bands);
+
+  // Document level
+  const D = doc || LEVEL_DEFAULTS.document();
+  const DD = LEVEL_DEFAULTS.document();
+  saveJSON(TEXTCHART_PROLOGUE_KEY, D.prologue || DD.prologue);
+  saveJSON(TEXTCHART_POSTLOGUE_KEY, D.postlogue || DD.postlogue);
+  saveJSON(FT_PREFS_KEY, D.freeTranslations || DD.freeTranslations);
+  saveJSON(NOTES_PREFS_KEY, D.notes || DD.notes);
+  saveJSON(ROW_GUIDS_KEY, D.rowGuids || DD.rowGuids);
+  saveJSON(TOKEN_GUIDS_KEY, D.tokenGuids || DD.tokenGuids);
+  saveJSON(NOTE_GUIDS_KEY, D.noteGuids || DD.noteGuids);
+  saveJSON(CUSTOM_COLS_PREFS_KEY, D.customColumns || DD.customColumns);
   
   // App-level settings
   if(settings.appSettings){
@@ -1333,9 +1403,18 @@ function syncLegacyToHierarchical(){
   if(ctx.genreId && lang.genres[ctx.genreId]){
     const genre = lang.genres[ctx.genreId];
     
-    // Sync genre-level settings
+    // Sync genre-level settings. Row assignments are split out to the current document; if no document
+    // is selected, keep whatever assignments the genre already carried (do not overwrite or drop them).
     const salience = loadJSON(SALIENCE_PREFS_KEY);
-    if(salience) genre.salienceBands = salience;
+    const docSel = ctx.documentId && genre.documents[ctx.documentId];
+    if(salience){
+      const bands = Object.assign({}, salience);
+      const assignments = bands.assignments || {};
+      delete bands.assignments;
+      if(!docSel && genre.salienceBands && genre.salienceBands.assignments) bands.assignments = genre.salienceBands.assignments;
+      genre.salienceBands = bands;
+      if(docSel) genre.documents[ctx.documentId].salienceAssignments = assignments;
+    }
     
     if(ctx.documentId && genre.documents[ctx.documentId]){
       const doc = genre.documents[ctx.documentId];
@@ -1403,14 +1482,16 @@ function migrateToHierarchical(){
   const defaultGenreId = 'narrative';
   const genre = ensureGenre(lang, defaultGenreId);
   
-  // Migrate genre-level settings
+  // Migrate genre-level settings (row assignments go to the document, see refreshAllSettingsFromContext)
   const salience = loadJSON(SALIENCE_PREFS_KEY);
-  if(salience) genre.salienceBands = salience;
+  const migratedAssignments = (salience && salience.assignments) || {};
+  if(salience){ genre.salienceBands = Object.assign({}, salience); delete genre.salienceBands.assignments; }
   
   // Create default document
   const defaultDocId = 'default';
   const doc = ensureDocument(genre, defaultDocId);
   doc.name = 'Current Document';
+  doc.salienceAssignments = migratedAssignments;
   
   // Migrate document-level settings
   const prologue = loadJSON(TEXTCHART_PROLOGUE_KEY);
@@ -1476,9 +1557,25 @@ byId('resetBtn').addEventListener('click', ()=>{
   byId('fileInput').value = '';
   byId('fileLoadedMsg').textContent = '';
   byId('renderArea').innerHTML = '<div class="small-muted">Paste or upload an XML file, then click Preview.</div>';
-  // Hide optional chart prologue controls when no chart is displayed
+  // Hide chart-specific controls when no chart is displayed
   showProloguePanel(false);
+  showLanguageProjectsSection(false);
+  showTextGenresSection(false);
+  showDocumentPartsSection(false);
+  const rhc = byId('repeatHeadersContainer'); if(rhc) rhc.style.display = 'none';
+  const fhc = byId('freezeHeadersContainer'); if(fhc) fhc.style.display = 'none';
+  setPrintHeadersEnabled(false);
 });
+
+// Re-run the transform for the XML currently loaded (used after settings or context changes)
+function rerenderCurrentChart(){
+  const xmlText = byId('xmlInput').value.trim();
+  if(!xmlText) return;
+  try{
+    const dom = new DOMParser().parseFromString(xmlText, 'application/xml');
+    if(!dom.querySelector('parsererror')) renderDocument(dom);
+  }catch(_){ /* ignore */ }
+}
 
 byId('transformBtn').addEventListener('click', async ()=> {
   const xmlText = byId('xmlInput').value.trim();
@@ -1591,7 +1688,7 @@ const importInput = byId('settingsImportInput');
 if(exportBtn){ exportBtn.addEventListener('click', ()=>{
   const data = collectAllSettings();
   const ts = new Date().toISOString().replace(/[:.]/g,'-');
-  downloadJSON(`flexxml-viewer-settings-${ts}.json`, { __meta:{ app:'flexxml-viewer', version:1, exportedAt: new Date().toISOString() }, data });
+  downloadJSON(`fdat-settings-${ts}.json`, { __meta:{ app:'fdat', version:1, exportedAt: new Date().toISOString() }, data });
 }); }
 if(importBtn && importInput){
   importBtn.addEventListener('click', ()=> importInput.click());
@@ -1638,6 +1735,8 @@ function initRepeatHeadersControl(){
   const enabled = !!(saved && saved.enabled);
   box.checked = enabled;
   setPrintHeadersEnabled(enabled);
+  if(box.dataset.wired === '1') return;
+  box.dataset.wired = '1';
   box.addEventListener('change', ()=>{
     const val = !!box.checked;
     setPrintHeadersEnabled(val);
@@ -1697,10 +1796,18 @@ function initFreezeHeadersControl(){
   const saved = loadJSON(FREEZE_HEADERS_KEY);
   const enabled = !!(saved && saved.enabled);
   box.checked = enabled;
+  if(box.dataset.wired === '1') return;
+  box.dataset.wired = '1';
   // Only apply after a chart is rendered; this function may run before the table exists
   box.addEventListener('change', ()=>{
     const val = !!box.checked; saveJSON(FREEZE_HEADERS_KEY, { enabled: val }); setFreezeHeadersEnabled(val);
   });
+}
+function refreshHeaderToggles(){
+  initRepeatHeadersControl();
+  initFreezeHeadersControl();
+  const savedFreeze = loadJSON(FREEZE_HEADERS_KEY);
+  setFreezeHeadersEnabled(!!(savedFreeze && savedFreeze.enabled));
 }
 
 /* ===== Collapsible panels (Text Chart settings) ===== */
@@ -1709,6 +1816,8 @@ function saveCollapseState(s){ saveJSON(COLLAPSE_STATE_KEY, s); }
 function wireCollapsible(panelId, headerId){
   const panel = byId(panelId); const header = byId(headerId);
   if(!panel || !header) return;
+  if(panel.dataset.collapsibleWired === '1') return; // listeners must not stack across re-renders
+  panel.dataset.collapsibleWired = '1';
   let state = loadCollapseState();
   const key = panelId;
   const noPersist = panel.getAttribute('data-no-persist') === '1';
@@ -1740,6 +1849,15 @@ function loadProloguePrefs(){
   };
 }
 function saveProloguePrefs(p){ saveJSON(TEXTCHART_PROLOGUE_KEY, p); }
+function refreshPrologueInputs(){
+  const tagSel = byId('titleTag'); const titleIn = byId('titleText'); const preTA = byId('prefaceHtml'); const preAuto = byId('prefaceAuto');
+  if(!tagSel || !titleIn || !preTA) return;
+  const prefs = loadProloguePrefs();
+  tagSel.value = prefs.tag || 'h1';
+  titleIn.value = prefs.titleText || '';
+  preTA.value = prefs.prefaceHtml || '';
+  if(preAuto) preAuto.checked = !!prefs.autoConvert;
+}
 function initPrologueControls(){
   const panel = byId('prologuePanel');
   const tagSel = byId('titleTag');
@@ -1749,11 +1867,9 @@ function initPrologueControls(){
   const clearTitleBtn = byId('clearTitleBtn');
   const clearPrefaceBtn = byId('clearPrefaceBtn');
   if(!panel || !tagSel || !titleIn || !preTA) return;
-  const prefs = loadProloguePrefs();
-  tagSel.value = prefs.tag || 'h1';
-  titleIn.value = prefs.titleText || '';
-  preTA.value = prefs.prefaceHtml || '';
-  if(preAuto) preAuto.checked = !!prefs.autoConvert;
+  refreshPrologueInputs();
+  if(panel.dataset.wired === '1') return;
+  panel.dataset.wired = '1';
   const onChange = ()=>{
     const p = { tag: tagSel.value, titleText: titleIn.value, prefaceHtml: preTA.value, autoConvert: !!(preAuto && preAuto.checked) };
     saveProloguePrefs(p);
@@ -1804,13 +1920,20 @@ function loadPostloguePrefs(){
   };
 }
 function savePostloguePrefs(p){ saveJSON(TEXTCHART_POSTLOGUE_KEY, p); }
+function refreshPostlogueInputs(){
+  const ta = byId('postlogueHtml'); const auto = byId('postlogueAuto');
+  const prefs = loadPostloguePrefs();
+  if(ta) ta.value = prefs.html || '';
+  if(auto) auto.checked = !!prefs.autoConvert;
+  globalState.postlogueHtml = prefs.html; globalState.postlogueAuto = prefs.autoConvert;
+}
 function initPostlogueControls(){
   const panel = byId('postloguePanel'); if(!panel) return;
   const ta = byId('postlogueHtml');
   const auto = byId('postlogueAuto');
-  const prefs = loadPostloguePrefs();
-  if(ta) ta.value = prefs.html || '';
-  if(auto) auto.checked = !!prefs.autoConvert;
+  refreshPostlogueInputs();
+  if(panel.dataset.wired === '1') return;
+  panel.dataset.wired = '1';
   const onChange = ()=>{
     const p = { html: ta?.value || '', autoConvert: !!(auto && auto.checked) };
     savePostloguePrefs(p);
@@ -1961,26 +2084,42 @@ function buildListRefControls(labels, suggestedOrder){
   const newGroupNameIn = byId('listRefNewGroupName');
   let prefs = reconcileListRefPrefs(loadListRefPrefs(), labels, suggestedOrder||[]);
   globalState.listRefPrefs = prefs; saveListRefPrefs(prefs);
-  if(enforceSel){ enforceSel.value = prefs.enforceMode || 'global'; enforceSel.addEventListener('change', ()=>{ prefs.enforceMode = enforceSel.value; persist(); applyListRefPrefsToArea(); }); }
+  // The panel's top-level buttons are wired once; they act on whichever build is current via this handle,
+  // so re-rendering a chart neither stacks listeners nor leaves them bound to stale prefs/labels.
+  const ui = { prefs, labels, suggestedOrder: Array.isArray(suggestedOrder) ? suggestedOrder.slice() : [], renderRows: null, persist: null };
+  globalState.listRefUI = ui;
+  if(enforceSel) enforceSel.value = prefs.enforceMode || 'global';
   function updateDirButton(){ if(dirBtn) dirBtn.textContent = prefs.reverse ? '(bottom → top)' : '(top → bottom)'; }
-  if(dirBtn){ dirBtn.addEventListener('click', ()=>{ prefs.reverse = !prefs.reverse; persist(); applyListRefPrefsToArea(); updateDirButton(); }); }
   updateDirButton();
-  if(showAllBtn){ showAllBtn.addEventListener('click', ()=>{ Object.values(prefs.entries).forEach(e=> e.hidden=false); persist(); applyListRefPrefsToArea(); renderRows(); }); }
-  if(hideAllBtn){ hideAllBtn.addEventListener('click', ()=>{ Object.values(prefs.entries).forEach(e=> e.hidden=true); persist(); applyListRefPrefsToArea(); renderRows(); }); }
-  if(resetAllStylesBtn){ resetAllStylesBtn.addEventListener('click', ()=>{
-    Object.values(prefs.entries).forEach(e=>{ e.bold=false; e.italic=false; e.underline=false; e.fontSize=''; e.color=''; });
-    (prefs.groups||[]).forEach(g=>{ g.styles = g.styles || {}; g.styles.bold=false; g.styles.italic=false; g.styles.underline=false; g.styles.fontSize=''; g.styles.color=''; });
-    persist(); applyListRefPrefsToArea(); renderRows();
-  }); }
-  if(addGroupBtn){ addGroupBtn.addEventListener('click', ()=>{
-    const name = (newGroupNameIn?.value || '').trim() || 'Group';
-    const id = 'g_' + Date.now().toString(36) + '_' + Math.floor(Math.random()*1000);
-    const g = { id, name, order: [], styles: { hidden:false, bold:false, italic:false, underline:false, fontSize:'', color:'' } };
-    prefs.groups = Array.isArray(prefs.groups) ? prefs.groups : [];
-    prefs.groups.push(g);
-    if(newGroupNameIn) newGroupNameIn.value = '';
-    persist(); renderRows(); applyListRefPrefsToArea();
-  }); }
+  if(panel.dataset.wired !== '1'){
+    const cur = ()=> globalState.listRefUI;
+    if(enforceSel) enforceSel.addEventListener('change', ()=>{ const u=cur(); u.prefs.enforceMode = enforceSel.value; u.persist(); applyListRefPrefsToArea(); });
+    if(dirBtn) dirBtn.addEventListener('click', ()=>{ const u=cur(); u.prefs.reverse = !u.prefs.reverse; u.persist(); applyListRefPrefsToArea(); dirBtn.textContent = u.prefs.reverse ? '(bottom → top)' : '(top → bottom)'; });
+    if(showAllBtn) showAllBtn.addEventListener('click', ()=>{ const u=cur(); Object.values(u.prefs.entries).forEach(e=> delete e.hidden); u.persist(); applyListRefPrefsToArea(); u.renderRows(); });
+    if(hideAllBtn) hideAllBtn.addEventListener('click', ()=>{ const u=cur(); Object.values(u.prefs.entries).forEach(e=> e.hidden=true); u.persist(); applyListRefPrefsToArea(); u.renderRows(); });
+    if(resetAllStylesBtn) resetAllStylesBtn.addEventListener('click', ()=>{
+      const u=cur();
+      Object.values(u.prefs.entries).forEach(e=>{ delete e.bold; delete e.italic; delete e.underline; delete e.fontSize; delete e.color; });
+      (u.prefs.groups||[]).forEach(g=>{ g.styles = g.styles || {}; delete g.styles.bold; delete g.styles.italic; delete g.styles.underline; delete g.styles.fontSize; delete g.styles.color; });
+      u.persist(); applyListRefPrefsToArea(); u.renderRows();
+    });
+    if(addGroupBtn) addGroupBtn.addEventListener('click', ()=>{
+      const u=cur();
+      const name = (newGroupNameIn?.value || '').trim() || 'Group';
+      const id = 'g_' + Date.now().toString(36) + '_' + Math.floor(Math.random()*1000);
+      u.prefs.groups = Array.isArray(u.prefs.groups) ? u.prefs.groups : [];
+      u.prefs.groups.push({ id, name, order: [], styles: {} });
+      if(newGroupNameIn) newGroupNameIn.value = '';
+      u.persist(); u.renderRows(); applyListRefPrefsToArea();
+    });
+    if(resetBtn) resetBtn.addEventListener('click', ()=>{
+      // Adopt the order suggested by the current chart's XML (most prevalent token sequence)
+      const u=cur();
+      u.prefs.order = reconcileListRefPrefs({ entries: u.prefs.entries, order: [] }, u.labels, u.suggestedOrder).order;
+      u.persist(); u.renderRows(); applyListRefPrefsToArea();
+    });
+    panel.dataset.wired = '1';
+  }
   function renderRows(){
     rowsHost.innerHTML='';
     const groupedIds = new Set();
@@ -2118,27 +2257,10 @@ function buildListRefControls(labels, suggestedOrder){
   function moveInGroup(gi, idx, delta){ const g=prefs.groups[gi]; if(!g||!Array.isArray(g.order)) return; const j = idx + delta; if(j<0||j>=g.order.length) return; const t=g.order[idx]; g.order[idx]=g.order[j]; g.order[j]=t; persist(); renderRows(); applyListRefPrefsToArea(); }
   function moveGroup(gi, delta){ const j = gi + delta; if(j<0||j>=prefs.groups.length) return; const t=prefs.groups[gi]; prefs.groups[gi]=prefs.groups[j]; prefs.groups[j]=t; persist(); renderRows(); applyListRefPrefsToArea(); }
   function persist(){ globalState.listRefPrefs = prefs; saveListRefPrefs(prefs); }
+  ui.renderRows = renderRows; ui.persist = persist;
   renderRows();
   // apply immediately
   applyListRefPrefsToArea();
-  // Wire Reset order: recompute suggestion from current XML and apply
-  if(resetBtn && panel.dataset.resetWired !== '1'){
-    resetBtn.addEventListener('click', ()=>{
-      try{
-        // Recompute suggested from last XML in memory is not stored; call compute on window XML via last transform input
-        // We don't have the last xmlDoc stored globally; instead, re-derive labels suggestion from the same XML we used earlier.
-        // As a practical approach, we will use the last computed suggestedOrder passed in, or recompute from Abbrev XML if available.
-        // Since suggestedOrder is passed into this builder, prefer reusing it.
-        const suggestion = Array.isArray(suggestedOrder) ? suggestedOrder.slice() : [];
-        // Clear saved order and adopt suggestion
-        prefs.order = reconcileListRefPrefs({ entries: prefs.entries, order: [] }, labels, suggestion).order;
-        persist();
-        renderRows();
-        applyListRefPrefsToArea();
-      }catch(_){ /* no-op */ }
-    });
-    panel.dataset.resetWired = '1';
-  }
 }
 function applyListRefPrefsToArea(){
   const area = byId('renderArea'); if(!area) return;
@@ -2592,8 +2714,9 @@ function initAppendHtmlControls(){
 
 /* ===== Main detection & dispatch ===== */
 async function renderDocument(xmlDoc){
-  // reset state
-  globalState = { phonemeIndex:{}, idToNatclassIds:{}, natclassElements:{}, phonemeRowIds:{}, showNames: byId('showNames').checked };
+  // reset state (attached before/after HTML documents are kept; they are not re-read from disk on re-render)
+  const keep = { beforeHtml: globalState.beforeHtml || null, beforeHtmlName: globalState.beforeHtmlName || '', afterHtml: globalState.afterHtml || null, afterHtmlName: globalState.afterHtmlName || '' };
+  globalState = { phonemeIndex:{}, idToNatclassIds:{}, natclassElements:{}, phonemeRowIds:{}, showNames: byId('showNames').checked, ...keep };
 
   const root = xmlDoc.documentElement;
   const tag = root.nodeName.toLowerCase();
@@ -2622,7 +2745,7 @@ async function renderDocument(xmlDoc){
     applyPrologueToRenderArea(loadProloguePrefs());
   // Show Postlogue controls (for export)
   showPostloguePanel(true);
-  if(!byId('postloguePanel').dataset.wired){ initPostlogueControls(); byId('postloguePanel').dataset.wired = '1'; }
+  initPostlogueControls();
   wireCollapsible('postloguePanel','postlogueHeader');
   // Notes panel
   showNotesPanel(true);
@@ -2636,12 +2759,9 @@ async function renderDocument(xmlDoc){
   showSaliencePanel(true);
   wireCollapsible('saliencePanel','salienceHeader');
   initSalienceControls();
-  // Salience display settings panel
+  // Salience display settings panel (was wired but never made visible)
+  showSalienceDisplayPanel(true);
   wireCollapsible('salienceDisplayPanel','salienceDisplayHeader');
-    // Show Custom Columns panel
-    showCustomColsPanel(true);
-    wireCollapsible('customColsPanel','customColsHeader');
-    if(!byId('customColsPanel').dataset.wired){ initCustomColsControls(); byId('customColsPanel').dataset.wired = '1'; }
     // Scan listRef abbreviations and show Abbrev controls
     globalState.chartAbbrevLabels = collectListRefLabelsFromXml(xmlDoc);
     showAbbrevPanel(true);
@@ -2654,15 +2774,7 @@ async function renderDocument(xmlDoc){
     if(rendered){
       area.appendChild(rendered);
       // Assign persistent GUIDs to body rows for stable associations
-      try{
-        const tbl = area.querySelector('table.chartshell');
-        if(tbl){
-          Array.from(tbl.querySelectorAll('tbody tr')).forEach(tr=>{
-            if(tr.classList.contains('title1') || tr.classList.contains('title2') || tr.classList.contains('ft-inline')) return;
-            getOrAssignRowGuid(tr);
-          });
-        }
-      }catch(_){ }
+      try{ assignRowGuids(area); }catch(_){ }
       // Wire note tooltips after chart content is in the DOM
       if(window.wireNoteTooltips){ try{ window.wireNoteTooltips(); }catch(e){ console.error('Error wiring note tooltips:', e); } }
       // Enable column resizing on the text chart table
@@ -2677,7 +2789,7 @@ async function renderDocument(xmlDoc){
     // Custom columns panel and application
     showCustomColsPanel(true);
     wireCollapsible('customColsPanel','customColsHeader');
-    if(!byId('customColsPanel').dataset.wired){ initCustomColsControls(); byId('customColsPanel').dataset.wired = '1'; }
+    initCustomColsControls();
     applyCustomColumnsToArea(area);
       // Apply freeze headers if saved and show control
       const fhc = byId('freezeHeadersContainer'); if(fhc) fhc.style.display = 'flex';
@@ -2727,8 +2839,8 @@ async function renderDocument(xmlDoc){
     msg.innerHTML = `
       <div style="padding:20px;text-align:center">
         <h3 style="color:#d32f2f;margin-bottom:12px">This tool only supports Discourse Charts (Text Charts)</h3>
-        <p style="margin-bottom:16px">For Lists, Phonology, Wordforms, and other FLEx XML export types,<br>please use the <strong><a href="index.html" style="color:var(--accent);text-decoration:underline">FLEx XML Viewer</a></strong>.</p>
-        <button onclick="window.location.href='index.html'" style="background:var(--accent);color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:1rem">Go to FLEx XML Viewer</button>
+        <p style="margin-bottom:16px">For Lists, Phonology, Wordforms, and other FLEx XML export types,<br>please use the <strong><a href="https://rulingants.github.io/flexml_display/" target="_blank" rel="noopener noreferrer" style="color:var(--accent);text-decoration:underline">FLEx XML Viewer</a></strong>.</p>
+        <a href="https://rulingants.github.io/flexml_display/" target="_blank" rel="noopener noreferrer" style="display:inline-block;background:var(--accent);color:white;text-decoration:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:1rem">Open FLEx XML Viewer</a>
       </div>
     `;
     area.appendChild(msg);
@@ -2849,10 +2961,10 @@ function toggleSalienceColumn(){
   const tbl = area.querySelector('table.chartshell'); if(!tbl) return;
   const want = !!prefs.showColumn;
   // Determine if a salience column exists (look for th/td with data-sal-col="1")
-  const has = !!tbl.querySelector('[data-sal-col="1"]');
+  const has = !!tbl.querySelector('th[data-sal-col="1"], td[data-sal-col="1"]');
   if(want && has){ updateSalienceColumnCells(tbl); return; }
-  if(!want && has){ removeSalienceColumn(tbl); return; }
-  if(want && !has){ addSalienceColumn(tbl); return; }
+  if(!want && has){ removeSalienceColumn(tbl); rebuildResizeHandles(tbl); return; }
+  if(want && !has){ addSalienceColumn(tbl); rebuildResizeHandles(tbl); return; }
 }
 function addSalienceColumn(tbl){
   // Add a leading column in header rows and body rows
@@ -2868,8 +2980,14 @@ function addSalienceColumn(tbl){
     const td = document.createElement('td'); td.className='sal-cell'; td.setAttribute('data-sal-col','1');
     r.insertBefore(td, r.firstChild);
   });
-  // Insert a new col element at the start of each colgroup for consistent widths
-  tbl.querySelectorAll('colgroup').forEach(g=>{ const c = document.createElement('col'); g.insertBefore(c, g.firstChild); });
+  // Exactly one <col> for the new column, at the very start of the table's column list.
+  // (It used to add one <col> to every colgroup, and never removed them, so column widths and
+  // resize handles drifted out of alignment each time the column was toggled.)
+  expandColgroupsToIndividualCols(tbl);
+  const c = document.createElement('col'); c.setAttribute('data-sal-col','1');
+  const firstCol = tbl.querySelector('colgroup col');
+  if(firstCol) firstCol.parentNode.insertBefore(c, firstCol);
+  else { const g = document.createElement('colgroup'); g.appendChild(c); tbl.insertBefore(g, tbl.firstChild); }
   updateSalienceColumnCells(tbl);
 }
 function removeSalienceColumn(tbl){
@@ -2892,7 +3010,10 @@ function updateSalienceColumnCells(tbl){
 /* ===== Custom columns (user-defined, per-row text) ===== */
 function loadCustomColsPrefs(){ const d = loadJSON(CUSTOM_COLS_PREFS_KEY) || {}; return { cols: Array.isArray(d.cols)?d.cols:[], cells: d.cells || {} }; }
 function saveCustomColsPrefs(p){ saveJSON(CUSTOM_COLS_PREFS_KEY, p); syncLegacyToHierarchical(); }
+let customColsUI = null;
+function refreshCustomColsList(){ if(customColsUI) customColsUI.render(); }
 function initCustomColsControls(){
+  if(customColsUI){ customColsUI.render(); return; }
   const addBtn = byId('ccAdd'); const listHost = byId('ccList'); const showAll = byId('ccShowAll'); const hideAll = byId('ccHideAll');
   if(!addBtn || !listHost) return;
   function render(){
@@ -2922,6 +3043,7 @@ function initCustomColsControls(){
   });
   showAll?.addEventListener('click', ()=>{ const p=loadCustomColsPrefs(); (p.cols||[]).forEach(c=> c.visible = true); saveCustomColsPrefs(p); applyCustomColumnsToArea(); render(); });
   hideAll?.addEventListener('click', ()=>{ const p=loadCustomColsPrefs(); (p.cols||[]).forEach(c=> c.visible = false); saveCustomColsPrefs(p); applyCustomColumnsToArea(); render(); });
+  customColsUI = { render };
   render();
 }
 function getRownumColumnIndex(tbl){
@@ -2938,69 +3060,78 @@ function getRownumColumnIndex(tbl){
     return foundIdx;
   }catch(_){ return 0; }
 }
-function removeCustomColumns(tbl){ tbl.querySelectorAll('[data-cc-col="1"]').forEach(n=> n.remove()); }
+function removeCustomColumns(tbl){
+  tbl.querySelectorAll('[data-cc-col="1"]').forEach(n=> n.remove());
+  // Undo any group-header widening done for custom columns
+  tbl.querySelectorAll('[data-cc-span]').forEach(c=>{
+    const span = Number(c.getAttribute('colspan')||'1') - Number(c.getAttribute('data-cc-span')||'0');
+    if(span > 1) c.setAttribute('colspan', String(span)); else c.removeAttribute('colspan');
+    c.removeAttribute('data-cc-span');
+  });
+}
 function applyCustomColumnsToArea(area){
   area = area || byId('renderArea'); if(!area) return;
   const tbl = area.querySelector('table.chartshell'); if(!tbl) return;
   expandColgroupsToIndividualCols(tbl);
-  // Remove existing resize handles; will re-add after columns update
-  try{ tbl.querySelectorAll('.col-resizer').forEach(h=> h.remove()); }catch(_){ }
   removeCustomColumns(tbl);
   const prefs = loadCustomColsPrefs(); const defs = (prefs.cols||[]).filter(c=> c.visible !== false);
-  if(!defs.length) return;
-  const baseIdx = getRownumColumnIndex(tbl);
-  // Insert new <col> after rownum index for all colgroups
-  const groups = Array.from(tbl.querySelectorAll('colgroup'));
-  groups.forEach(g=>{
-    const cols = Array.from(g.querySelectorAll('col'));
-    // Insert in reverse order to maintain final order
-    for(let i=defs.length-1;i>=0;i--){
-      const c = document.createElement('col'); c.setAttribute('data-cc-col','1');
-      const ref = cols[baseIdx+1] || null; // after rownum cell
-      if(ref){ g.insertBefore(c, ref); } else { g.appendChild(c); }
+  if(defs.length){
+    const baseIdx = getRownumColumnIndex(tbl);
+    // One <col> per custom column, directly after the row-number column's <col> (same colgroup).
+    // (Previously a <col> was added to *every* colgroup, so widths/handles no longer matched the cells.)
+    const baseCol = Array.from(tbl.querySelectorAll('colgroup col'))[baseIdx] || null;
+    if(baseCol){
+      const ref = baseCol.nextSibling;
+      defs.forEach(()=>{ const c = document.createElement('col'); c.setAttribute('data-cc-col','1'); baseCol.parentNode.insertBefore(c, ref); });
     }
-  });
-  // Insert header cells in title rows at the matching position
-  const headRows = tbl.querySelectorAll('thead tr.row.title1, thead tr.row.title2');
-  headRows.forEach(r=>{
-    // Find the cell covering baseIdx (row number)
-    let ci=0; let cellIdx=0; let coverCell=null;
-    const cells = Array.from(r.children);
-    for(let i=0;i<cells.length;i++){
-      const sp = Number(cells[i].getAttribute('colspan')||'1');
-      const covers = (baseIdx >= ci) && (baseIdx < ci+sp);
-      if(covers){ coverCell = cells[i]; cellIdx = i; break; }
-      ci += sp;
-    }
-    const insertAfter = coverCell || cells[0] || null;
-    const insParent = r;
-    for(let j=defs.length-1;j>=0;j--){ const d = defs[j];
-      const th = document.createElement('th'); th.className='cell cc-header'; th.textContent = d.label || ('Column'); th.setAttribute('data-cc-col','1');
-      if(insertAfter && insertAfter.nextSibling){ insParent.insertBefore(th, insertAfter.nextSibling); }
-      else if(insertAfter){ insParent.appendChild(th); }
-      else { insParent.appendChild(th); }
-    }
-  });
-  // Insert body cells per row after the row number cell
-  const bodyRows = Array.from(tbl.querySelectorAll('tbody tr')).filter(r=> !r.classList.contains('title1') && !r.classList.contains('title2') && !r.classList.contains('ft-inline'));
-  bodyRows.forEach(r=>{
-    const rowGuid = getRowGuidFromTr(r);
-    const rownumCell = Array.from(r.children).find(td=> !!td.querySelector('.interlinear .pair .w.rownum')) || r.querySelector('td');
-    for(let k=defs.length-1;k>=0;k--){ const d = defs[k];
-      const td = document.createElement('td'); td.className='cc-cell'; td.setAttribute('data-cc-col','1');
-      const div = document.createElement('div'); div.className='cc-edit'; div.contentEditable = 'true'; div.setAttribute('data-cc-id', d.id);
-      div.textContent = ((prefs.cells||{})[rowGuid]||{})[d.id] || '';
-      div.addEventListener('input', ()=>{
-        const p = loadCustomColsPrefs(); p.cells = p.cells || {}; p.cells[rowGuid] = p.cells[rowGuid] || {}; p.cells[rowGuid][d.id] = div.textContent; saveCustomColsPrefs(p);
+    // Header rows: if the cell covering the row-number column ends there, insert header cells after it;
+    // if it is a group header spanning further, widen it so the group still covers its columns.
+    const headRows = tbl.querySelectorAll('thead tr.row.title1, thead tr.row.title2');
+    headRows.forEach(r=>{
+      const isTitle2 = r.classList.contains('title2');
+      let ci=0; let coverCell=null; let coverEnd=0;
+      for(const cell of Array.from(r.children)){
+        const sp = Number(cell.getAttribute('colspan')||'1');
+        if(baseIdx >= ci && baseIdx < ci+sp){ coverCell = cell; coverEnd = ci+sp-1; break; }
+        ci += sp;
+      }
+      if(!coverCell) return;
+      if(coverEnd > baseIdx){
+        coverCell.setAttribute('colspan', String(Number(coverCell.getAttribute('colspan')||'1') + defs.length));
+        coverCell.setAttribute('data-cc-span', String(defs.length));
+        return;
+      }
+      const ref = coverCell.nextSibling;
+      if(isTitle2){
+        defs.forEach(d=>{ const th = document.createElement('th'); th.className='cell cc-header'; th.textContent = d.label || 'Column'; th.setAttribute('data-cc-col','1'); r.insertBefore(th, ref); });
+      } else {
+        // Group-header row: one blank cell spanning all custom columns
+        const th = document.createElement('th'); th.className='cell cc-header'; th.setAttribute('data-cc-col','1');
+        if(defs.length > 1) th.setAttribute('colspan', String(defs.length));
+        r.insertBefore(th, ref);
+      }
+    });
+    // Body cells per row, directly after the row-number cell
+    const bodyRows = Array.from(tbl.querySelectorAll('tbody tr')).filter(r=> !r.classList.contains('title1') && !r.classList.contains('title2') && !r.classList.contains('ft-inline'));
+    bodyRows.forEach(r=>{
+      const rowGuid = getRowGuidFromTr(r);
+      const rownumCell = Array.from(r.children).find(td=> !!td.querySelector('.interlinear .pair .w.rownum')) || r.querySelector('td');
+      const ref = rownumCell ? rownumCell.nextSibling : null;
+      defs.forEach(d=>{
+        const td = document.createElement('td'); td.className='cc-cell'; td.setAttribute('data-cc-col','1');
+        const div = document.createElement('div'); div.className='cc-edit'; div.contentEditable = 'true'; div.setAttribute('data-cc-id', d.id);
+        div.textContent = ((prefs.cells||{})[rowGuid]||{})[d.id] || '';
+        div.addEventListener('input', ()=>{
+          const p = loadCustomColsPrefs(); p.cells = p.cells || {}; p.cells[rowGuid] = p.cells[rowGuid] || {}; p.cells[rowGuid][d.id] = div.textContent; saveCustomColsPrefs(p);
+        });
+        td.appendChild(div);
+        r.insertBefore(td, ref);
       });
-      td.appendChild(div);
-      if(rownumCell && rownumCell.nextSibling){ r.insertBefore(td, rownumCell.nextSibling); }
-      else if(rownumCell){ r.appendChild(td); }
-      else { r.appendChild(td); }
-    }
-  });
-  // Re-wire resizers now that columns changed
-  addResizeHandles(tbl);
+    });
+  }
+  // Column set may have changed: rebuild the resize handles so each maps to the right <col>
+  // (this used to return early when there were no custom columns, leaving the chart with no handles at all)
+  rebuildResizeHandles(tbl);
 }
 
 /* ===== Text Chart detection and rendering (XSLT) ===== */
@@ -3010,15 +3141,23 @@ function isTextChartDocument(xmlDoc){
   return !!(xmlDoc.querySelector('document > chart > row') || xmlDoc.querySelector('chart > row'));
 }
 
+let xslDocPromise = null;
 async function loadTextChartXSL(){
-  const url = `textchart/textchart-to-html.xsl?v=${Date.now()}`;
-  const resp = await fetch(url);
-  if(!resp.ok) throw new Error(`Failed to fetch XSL (${resp.status})`);
-  const txt = await resp.text();
-  const doc = new DOMParser().parseFromString(txt, 'text/xml');
-  const err = doc.getElementsByTagName('parsererror')[0];
-  if(err) throw new Error('XSL parse error: ' + err.textContent.trim());
-  return doc;
+  // No cache-busting query string: the service worker precaches this file and refreshes it when
+  // its version is bumped. A unique query defeated the offline cache and leaked a runtime-cache
+  // entry per render. The parsed stylesheet is also kept in memory for subsequent renders.
+  if(!xslDocPromise){
+    xslDocPromise = (async ()=>{
+      const resp = await fetch('textchart/textchart-to-html.xsl');
+      if(!resp.ok) throw new Error(`Failed to fetch XSL (${resp.status})`);
+      const txt = await resp.text();
+      const doc = new DOMParser().parseFromString(txt, 'text/xml');
+      const err = doc.getElementsByTagName('parsererror')[0];
+      if(err) throw new Error('XSL parse error: ' + err.textContent.trim());
+      return doc;
+    })().catch(e=>{ xslDocPromise = null; throw e; });
+  }
+  return xslDocPromise;
 }
 
 async function renderTextChart(xmlDoc){
@@ -4080,7 +4219,7 @@ ${content}
   // Re-enable column resizing for Text Chart in exported document
   (function(){
     function wireHandleDrag(handle, allCols){
-      let startX = 0, startWidth = 0, colEl = null;
+      let startX = 0, startWidth = 0, colEl = null, minAllowed = 40;
       function computeMinColWidth(tbl, idx){
         let minW = 40;
         const rows = Array.from(tbl.querySelectorAll('tbody tr')).slice(0, 200);
@@ -4101,9 +4240,6 @@ ${content}
       }
       function onMove(e){
         const dx = e.clientX - startX;
-        const tbl = handle.closest('table');
-        const idx = Number(handle.dataset.colEnd||'0');
-        const minAllowed = computeMinColWidth(tbl, idx);
         const newW = Math.max(minAllowed, startWidth + dx);
         colEl.style.width = newW + 'px';
         handle.classList.add('dragging');
@@ -4132,6 +4268,7 @@ ${content}
         if(!colEl.style.width){ colEl.style.width = Math.max(40, Math.round(rect.width)) + 'px'; }
         startX = e.clientX;
         startWidth = parseFloat(colEl.style.width) || Math.max(40, Math.round(rect.width));
+        minAllowed = computeMinColWidth(tbl, idx);
         document.addEventListener('mousemove', onMove);
         document.addEventListener('mouseup', onUp);
       });
@@ -4227,7 +4364,7 @@ ${content}
         } else {
           fallbackDownload(html, filename);
         }
-      }catch(e){ console.warn('Error applying FT inline style variables:', e); }
+      }catch(e){ console.warn('Error saving HTML:', e); }
     }
     function fallbackDownload(html, filename){
       var blob = new Blob([html], {type:'text/html'});
@@ -4258,6 +4395,10 @@ function expandColgroupsToIndividualCols(tbl){
     }
   });
 }
+function rebuildResizeHandles(tbl){
+  try{ tbl.querySelectorAll('.col-resizer').forEach(h=> h.remove()); }catch(_){ }
+  addResizeHandles(tbl);
+}
 function addResizeHandles(tbl){
   const header2 = tbl.querySelector('tr.row.title2');
   const header = header2 || tbl.querySelector('tr.row.title1');
@@ -4278,7 +4419,7 @@ function addResizeHandles(tbl){
   });
 }
 function wireHandleDrag(handle, allCols){
-  let startX = 0, startWidth = 0, colEl = null;
+  let startX = 0, startWidth = 0, colEl = null, minAllowed = 40;
     function computeMinColWidth(tbl, idx){
       let minW = 40;
       const rows = Array.from(tbl.querySelectorAll('tbody tr')).slice(0, 200);
@@ -4299,10 +4440,7 @@ function wireHandleDrag(handle, allCols){
     }
   function onMove(e){
     const dx = e.clientX - startX;
-      const tbl = handle.closest('table');
-      const idx = Number(handle.dataset.colEnd||'0');
-      const minAllowed = computeMinColWidth(tbl, idx);
-      const newW = Math.max(minAllowed, startWidth + dx);
+    const newW = Math.max(minAllowed, startWidth + dx);
     colEl.style.width = newW + 'px';
     handle.classList.add('dragging');
   }
@@ -4330,6 +4468,7 @@ function wireHandleDrag(handle, allCols){
     if(!colEl.style.width){ colEl.style.width = Math.max(40, Math.round(rect.width)) + 'px'; }
     startX = e.clientX;
     startWidth = parseFloat(colEl.style.width) || Math.max(40, Math.round(rect.width));
+    minAllowed = computeMinColWidth(tbl, idx); // measured once per drag (it scans up to 200 rows)
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
   });
@@ -4382,8 +4521,9 @@ function enableTextChartColumnResize(root){
   function scheduleHide(){ clearTimeout(hideTimer); hideTimer = setTimeout(()=>{ if(tipEl) tipEl.style.display='none'; }, 200); }
   function cancelHide(){ clearTimeout(hideTimer); }
   function wire(container){
-    const links = Array.from(container.querySelectorAll('.note-link, .ft-link'));
+    const links = Array.from(container.querySelectorAll('.note-link, .ft-link')).filter(l=> l.dataset.tipWired !== '1');
     links.forEach(l=>{
+      l.dataset.tipWired = '1';
       l.addEventListener('mouseenter', (e)=>{ cancelHide(); showTip(l, e); });
       l.addEventListener('mouseleave', scheduleHide);
       l.addEventListener('mousemove', (e)=>{ if(tipEl && tipEl.style.display!=='none'){ positionTipFor(l, e); } });
@@ -4411,15 +4551,21 @@ function enableTextChartColumnResize(root){
 
 /* ===== Free translations feature ===== */
 function showFTPanel(show){ const p = byId('ftPanel'); if(p) p.style.display = show ? 'block' : 'none'; }
-function initFTControls(){
-  const panel = byId('ftPanel'); if(!panel) return;
-  const modeSel = byId('ftMode'); const clearAll = byId('ftClearAll');
-  const fontSizeIn = byId('ftFontSize'); const colorIn = byId('ftColor'); const bgIn = byId('ftBg');
+function refreshFTInputs(){
+  const modeSel = byId('ftMode'); const fontSizeIn = byId('ftFontSize'); const colorIn = byId('ftColor'); const bgIn = byId('ftBg');
   const prefs = loadFTPrefs();
   if(modeSel) modeSel.value = prefs.mode || 'tooltip';
   if(fontSizeIn) fontSizeIn.value = prefs.style?.fontSize || '';
   if(colorIn) colorIn.value = prefs.style?.color || '#333333';
   if(bgIn) bgIn.value = prefs.style?.bg || '#fbfcff';
+}
+function initFTControls(){
+  const panel = byId('ftPanel'); if(!panel) return;
+  const modeSel = byId('ftMode'); const clearAll = byId('ftClearAll');
+  const fontSizeIn = byId('ftFontSize'); const colorIn = byId('ftColor'); const bgIn = byId('ftBg');
+  refreshFTInputs();
+  if(panel.dataset.wired === '1') return;
+  panel.dataset.wired = '1';
   function onModeChange(){ const p = loadFTPrefs(); p.mode = modeSel.value; saveFTPrefs(p); const area = byId('renderArea'); applyFreeTranslationsToArea(area); }
   modeSel?.addEventListener('change', onModeChange);
   function onStyleChange(){
@@ -4533,7 +4679,7 @@ function applyFT_TooltipMode(area, tbl, items){
   if(!rownumSpan.id) rownumSpan.id = 'row-' + label + '-ftsrc';
     // avoid duplicates
     if(rownumSpan.parentElement?.querySelector('.ft-link')) return;
-    const a = document.createElement('a'); a.className='ft-link'; a.href = '#ft-' + CSS.escape(label);
+    const a = document.createElement('a'); a.className='ft-link'; a.href = '#ft-' + encodeURIComponent(label);
     const sup = document.createElement('sup'); sup.textContent='T'; a.appendChild(sup);
     const tip = document.createElement('div'); tip.className='ft-tooltip-content'; tip.style.display='none'; tip.textContent = text;
     rownumSpan.parentElement?.appendChild(a);
@@ -4593,31 +4739,33 @@ function loadNotesPrefs(){ const d = loadJSON(NOTES_PREFS_KEY) || {}; return { m
 function saveNotesPrefs(p){ saveJSON(NOTES_PREFS_KEY, p); }
 function showNotesPanel(show){ const p = byId('notesPanel'); if(p) p.style.display = show ? 'block' : 'none'; }
 function showCustomColsPanel(show){ const p = byId('customColsPanel'); if(p) p.style.display = show ? 'block' : 'none'; }
-function initNotesControls(){
-  const modeSel = byId('notesMode'); const widthIn = byId('notesWidth'); const resetBtn = byId('notesReset');
+function refreshNotesInputs(){
+  const modeSel = byId('notesMode'); const widthIn = byId('notesWidth');
   if(!modeSel || !widthIn) return;
   const prefs = loadNotesPrefs();
   modeSel.value = prefs.mode || 'inline';
   widthIn.value = prefs.width || '';
+}
+function initNotesControls(){
+  const modeSel = byId('notesMode'); const widthIn = byId('notesWidth'); const resetBtn = byId('notesReset');
+  if(!modeSel || !widthIn) return;
+  refreshNotesInputs();
+  if(modeSel.dataset.wired === '1') return;
+  modeSel.dataset.wired = '1';
   const onChange = ()=>{
     const p = { mode: modeSel.value, width: widthIn.value.trim() };
     saveNotesPrefs(p);
-    // Re-render the current document if a chart is visible by triggering transform
-    const xmlText = byId('xmlInput').value.trim();
-    if(xmlText){
-      try{
-        const dom = new DOMParser().parseFromString(xmlText, 'application/xml');
-        if(!dom.querySelector('parsererror')) renderDocument(dom);
-      }catch(_){/* ignore */}
-    }
+    // Notes mode/width are XSL parameters, so the chart must be transformed again
+    rerenderCurrentChart();
   };
   modeSel.addEventListener('change', onChange);
   widthIn.addEventListener('change', onChange);
-  byId('notesReset')?.addEventListener('click', ()=>{ modeSel.value='inline'; widthIn.value=''; onChange(); });
+  resetBtn?.addEventListener('click', ()=>{ modeSel.value='inline'; widthIn.value=''; onChange(); });
 }
 
 /* ===== Salience Bands (row color coding) ===== */
 function showSaliencePanel(show){ const p = byId('saliencePanel'); if(p) p.style.display = show ? 'block' : 'none'; }
+function showSalienceDisplayPanel(show){ const p = byId('salienceDisplayPanel'); if(p) p.style.display = show ? 'block' : 'none'; }
 
 // Section visibility functions
 function showLanguageProjectsSection(show){ const p = byId('languageProjectsSection'); if(p) p.style.display = show ? 'block' : 'none'; }
@@ -4674,7 +4822,10 @@ function computeSalienceNumbers(tree){
   })(tree||[], '');
   return map;
 }
+let salienceUI = null;
+function refreshSalienceEditor(){ if(salienceUI) salienceUI.reload(); }
 function initSalienceControls(){
+  if(salienceUI){ salienceUI.reload(); return; }
   const listHost = byId('salienceList'); if(!listHost) return;
   const addRootBtn = byId('salAddRoot');
   const clearAssignBtn = byId('salClearAssignments');
@@ -4684,39 +4835,44 @@ function initSalienceControls(){
   const cellOnlyCb = byId('salienceCellOnly');
   const opacityRange = byId('salienceOpacity');
   let prefs = loadSaliencePrefs();
-  if(enabledCb){ enabledCb.checked = !!prefs.enabled; enabledCb.addEventListener('change', ()=>{ prefs.enabled = !!enabledCb.checked; persist(); }); }
-  if(legendCb){ legendCb.checked = !!prefs.showLegend; legendCb.addEventListener('change', ()=>{ prefs.showLegend = !!legendCb.checked; persist(); }); }
-  if(colCb){ colCb.checked = !!prefs.showColumn; colCb.addEventListener('change', ()=>{ prefs.showColumn = !!colCb.checked; persist(); }); }
-  if(cellOnlyCb){ cellOnlyCb.checked = !!prefs.cellOnly; cellOnlyCb.addEventListener('change', ()=>{ prefs.cellOnly = !!cellOnlyCb.checked; persist(); }); }
-  if(opacityRange){ opacityRange.value = String((typeof prefs.opacity==='number'?prefs.opacity:1)); opacityRange.addEventListener('input', ()=>{ prefs.opacity = Number(opacityRange.value); persist(); }); }
+  function syncInputs(){
+    if(enabledCb) enabledCb.checked = !!prefs.enabled;
+    if(legendCb) legendCb.checked = !!prefs.showLegend;
+    if(colCb) colCb.checked = !!prefs.showColumn;
+    if(cellOnlyCb) cellOnlyCb.checked = !!prefs.cellOnly;
+    if(opacityRange) opacityRange.value = String((typeof prefs.opacity==='number'?prefs.opacity:1));
+  }
+  syncInputs();
+  if(enabledCb) enabledCb.addEventListener('change', ()=>{ prefs.enabled = !!enabledCb.checked; persist(); });
+  if(legendCb) legendCb.addEventListener('change', ()=>{ prefs.showLegend = !!legendCb.checked; persist(); });
+  if(colCb) colCb.addEventListener('change', ()=>{ prefs.showColumn = !!colCb.checked; persist(); });
+  if(cellOnlyCb) cellOnlyCb.addEventListener('change', ()=>{ prefs.cellOnly = !!cellOnlyCb.checked; persist(); });
+  if(opacityRange) opacityRange.addEventListener('input', ()=>{ prefs.opacity = Number(opacityRange.value); persist(); });
   function persist(options){
     const mergeAssignments = !options || options.mergeAssignments !== false;
     if(mergeAssignments){
+      // Row assignments are edited by the per-row picker and saved straight to storage, so storage is
+      // authoritative for them here. (A union with the editor's copy used to resurrect removed assignments.)
       try{
         const latest = loadSaliencePrefs();
-        // Union storage and in-memory assignments to avoid clobbering recent row picks
-        const curA = prefs.assignments || {};
-        const latA = (latest && latest.assignments) || {};
-        prefs.assignments = Object.assign({}, latA, curA);
-        // Ensure tree is at least defined to avoid accidental pruning when an empty object is saved from elsewhere
-        if(!Array.isArray(prefs.tree)){
-          if(Array.isArray(latest.tree)) prefs.tree = latest.tree;
-          else prefs.tree = [];
-        }
+        prefs.assignments = (latest && latest.assignments) || {};
+        if(!Array.isArray(prefs.tree)) prefs.tree = Array.isArray(latest.tree) ? latest.tree : [];
       }catch(_){ /* ignore */ }
     }
     saveSaliencePrefs(prefs);
     refreshSalienceVisuals(byId('renderArea'));
   }
   function removeNode(id){
+    // Collect the node and its descendants *before* removing it from the tree, then drop their assignments
+    // (storage is authoritative for assignments; see persist()).
+    prefs.assignments = (loadSaliencePrefs().assignments) || {};
+    const toDelete = new Set(); (function collect(id){ const hit = findNode(prefs.tree, id); if(hit){ toDelete.add(hit.node.id); (hit.node.children||[]).forEach(c=> collect(c.id)); } })(id);
     function rec(list){
       const idx = list.findIndex(x=> x.id===id);
       if(idx!==-1){ list.splice(idx,1); return true; }
       return list.some(n=> rec(n.children||[]));
     }
     rec(prefs.tree);
-    // Remove assignments to this node and all descendants
-    const toDelete = new Set(); (function collect(id){ const hit = findNode(prefs.tree, id); if(hit){ toDelete.add(hit.node.id); (hit.node.children||[]).forEach(c=> collect(c.id)); } })(id);
     Object.keys(prefs.assignments).forEach(row=>{ if(toDelete.has(prefs.assignments[row])) delete prefs.assignments[row]; });
   }
   function moveUp(id){ const loc = findNode(prefs.tree, id); if(!loc) return; const arr = loc.list; const i = loc.index; if(i>0){ const t=arr[i-1]; arr[i-1]=arr[i]; arr[i]=t; persist(); render(); } }
@@ -4767,6 +4923,7 @@ function initSalienceControls(){
   }
   if(addRootBtn){ addRootBtn.onclick = ()=>{ prefs.tree.push(newSalNode('Band')); persist(); render(); }; }
   if(clearAssignBtn){ clearAssignBtn.onclick = ()=>{ if(confirm('Clear all row salience assignments?')){ prefs.assignments = {}; persist({ mergeAssignments: false }); render(); } }; }
+  salienceUI = { reload(){ prefs = loadSaliencePrefs(); syncInputs(); render(); } };
   // First render
   render();
 }
@@ -4945,6 +5102,7 @@ function initLanguageControls(){
   }
   
   select.addEventListener('change', ()=>{
+    syncLegacyToHierarchical(); // persist the outgoing context first
     const ctx = loadCurrentContext();
     ctx.languageId = select.value || null;
     // Reset genre and document when changing language
@@ -4954,7 +5112,7 @@ function initLanguageControls(){
     updateLanguageInputs();
     updateGenreList();
     updateDocumentList();
-    refreshAllSettingsFromContext();
+    onContextChanged();
   });
   
   nameInput.addEventListener('change', ()=>{
@@ -4990,6 +5148,7 @@ function initLanguageControls(){
     setCurrentContext(id, genreId, null);
     updateLanguageList();
     updateGenreList();
+    updateDocumentList();
   });
   
   editBtn?.addEventListener('click', ()=>{
@@ -5034,11 +5193,12 @@ function initLanguageControls(){
         // Generate new ID to avoid conflicts
         const newId = 'lang_' + Date.now().toString(36);
         data.language.id = newId;
-        settings.languages[newId] = data.language;
+        settings.languages[newId] = normalizeLanguage(data.language);
         saveHierarchicalSettings(settings);
         setCurrentContext(newId, null, null);
         updateLanguageList();
         updateGenreList();
+        updateDocumentList();
         alert('Language imported successfully.');
       }catch(err){
         alert('Failed to import language: ' + (err?.message || String(err)));
@@ -5072,6 +5232,7 @@ function initGenreControls(){
   }
   
   select.addEventListener('change', ()=>{
+    syncLegacyToHierarchical(); // persist the outgoing context first
     const ctx = loadCurrentContext();
     ctx.genreId = select.value || null;
     // Reset document when changing genre
@@ -5079,18 +5240,19 @@ function initGenreControls(){
     saveCurrentContext(ctx);
     updateGenreInputs();
     updateDocumentList();
-    refreshAllSettingsFromContext();
+    onContextChanged();
   });
   
   nameInput.addEventListener('change', ()=>{
-    const lang = getCurrentLanguage();
-    const ctx = loadCurrentContext();
-    if(lang && ctx.genreId && lang.genres[ctx.genreId]){
-      lang.genres[ctx.genreId].name = nameInput.value.trim();
-      const settings = loadHierarchicalSettings();
-      saveHierarchicalSettings(settings);
-      updateGenreList();
-    }
+    // (The rename used to be applied to a throwaway copy and was never saved.)
+    const renamed = updateSettings((settings, ctx)=>{
+      const lang = ctx.languageId && settings.languages[ctx.languageId];
+      const genre = lang && ctx.genreId && lang.genres[ctx.genreId];
+      if(!genre) return false;
+      genre.name = nameInput.value.trim();
+      return true;
+    });
+    if(renamed) updateGenreList();
   });
   
   addBtn?.addEventListener('click', ()=>{
@@ -5101,6 +5263,7 @@ function initGenreControls(){
     }
     const name = prompt('Enter genre name:', 'Narrative');
     if(!name) return;
+    syncLegacyToHierarchical(); // persist the outgoing context first
     const id = 'genre_' + Date.now().toString(36);
     const settings = loadHierarchicalSettings();
     const lang = settings.languages[ctx.languageId];
@@ -5113,7 +5276,7 @@ function initGenreControls(){
     saveCurrentContext(ctx);
     updateGenreList();
     updateDocumentList();
-    refreshAllSettingsFromContext();
+    onContextChanged();
   });
   
   editBtn?.addEventListener('click', ()=>{
@@ -5157,20 +5320,21 @@ function initGenreControls(){
           alert('Invalid genre export file.');
           return;
         }
+        syncLegacyToHierarchical(); // persist the outgoing context first
         const settings = loadHierarchicalSettings();
         const lang = settings.languages[ctx.languageId];
         if(!lang) return;
         // Generate new ID to avoid conflicts
         const newId = 'genre_' + Date.now().toString(36);
         data.genre.id = newId;
-        lang.genres[newId] = data.genre;
+        lang.genres[newId] = normalizeGenre(data.genre);
         saveHierarchicalSettings(settings);
         ctx.genreId = newId;
         ctx.documentId = null;
         saveCurrentContext(ctx);
         updateGenreList();
         updateDocumentList();
-        refreshAllSettingsFromContext();
+        onContextChanged();
         alert('Genre imported successfully.');
       }catch(err){
         alert('Failed to import genre: ' + (err?.message || String(err)));
@@ -5230,21 +5394,25 @@ function initDocumentControls(){
   }
   
   select.addEventListener('change', ()=>{
+    syncLegacyToHierarchical(); // persist the outgoing context first
     const ctx = loadCurrentContext();
     ctx.documentId = select.value || null;
     saveCurrentContext(ctx);
     updateDocumentInputs();
-    refreshAllSettingsFromContext();
+    onContextChanged();
   });
   
   nameInput.addEventListener('change', ()=>{
-    const doc = getCurrentDocument();
-    if(doc){
+    // (The rename used to be applied to a throwaway copy and was never saved.)
+    const renamed = updateSettings((settings, ctx)=>{
+      const lang = ctx.languageId && settings.languages[ctx.languageId];
+      const genre = lang && ctx.genreId && lang.genres[ctx.genreId];
+      const doc = genre && ctx.documentId && genre.documents[ctx.documentId];
+      if(!doc) return false;
       doc.name = nameInput.value.trim();
-      const settings = loadHierarchicalSettings();
-      saveHierarchicalSettings(settings);
-      updateDocumentList();
-    }
+      return true;
+    });
+    if(renamed) updateDocumentList();
   });
   
   addBtn?.addEventListener('click', ()=>{
@@ -5255,17 +5423,22 @@ function initDocumentControls(){
     }
     const name = prompt('Enter document name:');
     if(!name) return;
+    syncLegacyToHierarchical(); // persist the outgoing context first
     const id = 'doc_' + Date.now().toString(36);
-    const genre = getCurrentGenre();
-    if(!genre) return;
-    const doc = ensureDocument(genre, id);
-    doc.name = name.trim();
-    const settings = loadHierarchicalSettings();
-    saveHierarchicalSettings(settings);
+    // (The new document used to be created on a throwaway copy and was never saved.)
+    const created = updateSettings((settings)=>{
+      const lang = ctx.languageId && settings.languages[ctx.languageId];
+      const genre = lang && lang.genres[ctx.genreId];
+      if(!genre) return false;
+      const doc = ensureDocument(genre, id);
+      doc.name = name.trim();
+      return true;
+    });
+    if(!created) return;
     ctx.documentId = id;
     saveCurrentContext(ctx);
     updateDocumentList();
-    refreshAllSettingsFromContext();
+    onContextChanged();
   });
   
   editBtn?.addEventListener('click', ()=>{
@@ -5309,18 +5482,23 @@ function initDocumentControls(){
           alert('Invalid document export file.');
           return;
         }
-        const genre = getCurrentGenre();
-        if(!genre) return;
+        syncLegacyToHierarchical(); // persist the outgoing context first
         // Generate new ID to avoid conflicts
         const newId = 'doc_' + Date.now().toString(36);
         data.document.id = newId;
-        genre.documents[newId] = data.document;
-        const settings = loadHierarchicalSettings();
-        saveHierarchicalSettings(settings);
+        // (The import used to be applied to a throwaway copy and was never saved.)
+        const imported = updateSettings((settings)=>{
+          const lang = ctx.languageId && settings.languages[ctx.languageId];
+          const genre = lang && ctx.genreId && lang.genres[ctx.genreId];
+          if(!genre) return false;
+          genre.documents[newId] = data.document;
+          return true;
+        });
+        if(!imported){ alert('Please select a genre first.'); return; }
         ctx.documentId = newId;
         saveCurrentContext(ctx);
         updateDocumentList();
-        refreshAllSettingsFromContext();
+        onContextChanged();
         alert('Document imported successfully.');
       }catch(err){
         alert('Failed to import document: ' + (err?.message || String(err)));
@@ -5378,11 +5556,14 @@ setInterval(syncLegacyToHierarchical, 5000);
 </script>
 <script>
   // Open external links in a new browser window (prevents in-app browsing).
+  const appBase = location.pathname.replace(/[^/]*$/, ''); // e.g. "/fdat/" on GitHub Pages, "/" on a dev server
   document.addEventListener('click', (e) => {
     const a = e.target.closest('a[href]');
     if (!a) return;
-    const url = new URL(a.getAttribute('href'), location.href);
-    const inScope = url.origin === location.origin && url.pathname.startsWith('/fdat/');
+    const href = a.getAttribute('href') || '';
+    if (href.startsWith('#')) return; // in-page anchors (free translations, endnotes)
+    let url; try { url = new URL(href, location.href); } catch (_) { return; }
+    const inScope = url.origin === location.origin && url.pathname.startsWith(appBase);
     if (!inScope) {
       a.target = '_blank';
       a.rel = 'noopener noreferrer external';
