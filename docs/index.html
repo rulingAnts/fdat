@@ -289,6 +289,25 @@
 </head>
 <body>
 
+<!-- Deprecation notice: FDAT is archived; FLEx Scratchpad replaces it.
+     Styles live here in <body>, not <head>, so exported charts (which copy head
+     styles) don't pick them up. -->
+<style>
+  #deprecationBanner{display:flex;flex-wrap:wrap;align-items:center;gap:12px 20px;margin:0 0 16px;padding:18px 22px;background:#fff4d6;color:#4a3000;border:2px solid #d98e04;border-left-width:10px;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,0.08)}
+  #deprecationBanner .dep-text{flex:1 1 320px;min-width:0}
+  #deprecationBanner .dep-title{margin:0 0 4px;font-size:1.35rem;font-weight:700;color:#4a3000}
+  #deprecationBanner p{margin:0;font-size:1rem;line-height:1.45}
+  #deprecationBanner .dep-link{display:inline-block;padding:10px 18px;background:#b45309;color:#fff;font-weight:700;font-size:1rem;text-decoration:none;border-radius:6px;white-space:nowrap}
+  #deprecationBanner .dep-link:hover,#deprecationBanner .dep-link:focus{background:#92400e}
+</style>
+<div id="deprecationBanner" role="alert">
+  <div class="dep-text">
+    <h2 class="dep-title">⚠ FDAT is no longer being developed</h2>
+    <p>This web app has been superseded by <strong>FLEx Scratchpad</strong>. It no longer receives fixes or new features. Please use FLEx Scratchpad instead.</p>
+  </div>
+  <a class="dep-link" href="https://rulingants.github.io/flex-scratchpad/" target="_blank" rel="noopener">Go to FLEx Scratchpad →</a>
+</div>
+
 <header>
   <h1>Flex DiscourseChart Analysis Tool (FDAT)</h1>
   <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
