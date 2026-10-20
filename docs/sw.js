@@ -1,6 +1,6 @@
 /* FDAT PWA Service Worker */
 /* Version bump this to trigger updates */
-const SW_VERSION = 'v2';
+const SW_VERSION = 'v3';
 const PRECACHE = `fdat-precache-${SW_VERSION}`;
 const RUNTIME = 'fdat-runtime';
 
